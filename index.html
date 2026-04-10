@@ -946,6 +946,8 @@ function createTemplateState(tmpl) {
         if (cfg.x + newW > CANVAS_W || cfg.y + newH > CANVAS_H) return;
         if (newW <= 0 || newH <= 0) return;
 
+        const oldW = cfg.w;
+        const oldH = cfg.h;
         cfg.w = newW;
         cfg.h = newH;
 
@@ -956,9 +958,12 @@ function createTemplateState(tmpl) {
         // Recompute scaled path for shaped frames
         updateFrameShape(cellState);
 
-        // Recalculate image transform to maintain coverage
+        // Scale the image position proportionally so it stays in place
         if (cellState.loaded) {
-          calculateDefaultTransform(cellState);
+          const ratio = newW / oldW;
+          cellState.posX *= ratio;
+          cellState.posY *= ratio;
+          cellState.scale *= ratio;
           applyTransformFor(state, i);
         }
 
