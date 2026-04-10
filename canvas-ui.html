@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canvas Frame Editor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #0c0c0f;
+    color: #e0ddd8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    gap: 0;
+  }
+
+  /* ---- Side tab bar ---- */
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+    background: #111114;
+    border-right: 1px solid #1e1e24;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 0;
+    gap: 4px;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
+  .sidebar-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #444;
+    padding: 0 16px 12px;
+  }
+
+  .tab-btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    color: #777;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, color 0.15s;
+    border-left: 3px solid transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .tab-btn:hover {
+    background: #18181c;
+    color: #aaa;
+  }
+
+  .tab-btn.active {
+    background: #1a1a20;
+    color: #e0ddd8;
+    border-left-color: #5a5aff;
+  }
+
+  .tab-btn .tab-meta {
+    font-size: 10px;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .tab-btn.active .tab-meta {
+    color: #555;
+  }
+
+  /* ---- Main content ---- */
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 20px;
+    gap: 16px;
+    overflow-y: auto;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  .top-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .top-bar button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 16px;
+    border-radius: 6px;
+    border: 1px solid #2a2a30;
+    background: #18181c;
+    color: #ccc;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .top-bar button:hover {
+    background: #222228;
+    border-color: #444;
+  }
+
+  .zoom-display {
+    font-size: 13px;
+    color: #555;
+    min-width: 50px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .selected-label {
+    font-size: 12px;
+    color: #666;
+  }
+
+  /* ---- Canvas container ---- */
+  .canvas-area {
+    position: relative;
+    border: 2px solid #1e1e24;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  /* ---- Cell: absolutely positioned frame ---- */
+  .cell {
+    position: absolute;
+    background: transparent;
+    overflow: hidden;
+    cursor: default;
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    transition: outline-color 0.15s, filter 0.15s, background 0.15s;
+  }
+
+  .cell.has-image { background: #141417; }
+
+  .cell.selected { outline-color: #5a5aff; }
+
+  /* Border for empty rectangular (non-shaped) frames */
+  .cell:not(.has-image):not(.shaped) {
+    border: var(--frame-border-width) solid var(--frame-border-color);
+  }
+
+  .cell.swap-source {
+    outline-color: #20c997 !important;
+    filter: brightness(0.7);
+    z-index: 5;
+  }
+
+  .cell.swap-target {
+    outline-color: #20c997 !important;
+    background: rgba(32, 201, 151, 0.15) !important;
+  }
+
+  .cell.has-image { cursor: grab; }
+  .cell.has-image.dragging { cursor: grabbing; }
+  .cell.has-image.swapping { cursor: grabbing; }
+
+  .cell-upload {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    z-index: 2;
+    transition: background 0.15s;
+  }
+
+  .cell-upload:hover { background: rgba(90, 90, 255, 0.06); }
+  .cell-upload svg { opacity: 0.18; transition: opacity 0.15s; }
+  .cell-upload:hover svg { opacity: 0.35; }
+  .cell-upload span { font-size: 11px; color: #383838; transition: color 0.15s; }
+  .cell-upload:hover span { color: #555; }
+  .cell.has-image .cell-upload { display: none; }
+
+  .cell input[type="file"] { display: none; }
+
+  .cell img {
+    position: absolute;
+    display: block;
+    transform-origin: 0 0;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+  }
+
+  .cell .handle {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: rgba(90, 90, 255, 0.1);
+    border: 1.5px solid rgba(140, 140, 255, 0.35);
+    border-radius: 2px;
+    z-index: 10;
+    display: none;
+  }
+
+  .cell.has-image.selected .handle { display: block; }
+  .cell .handle-tl { top: 4px;    left: 4px;   cursor: nw-resize; }
+  .cell .handle-tr { top: 4px;    right: 4px;  cursor: ne-resize; }
+  .cell .handle-bl { bottom: 4px; left: 4px;   cursor: sw-resize; }
+  .cell .handle-br { bottom: 4px; right: 4px;  cursor: se-resize; }
+
+  .shape-outline {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .shape-outline svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .shape-outline svg .outline-path {
+    fill: none;
+    stroke: var(--frame-border-color);
+    stroke-width: calc(var(--frame-border-width-num) * 2);
+  }
+
+  .cell.has-image .shape-outline { display: none; }
+
+  .cell-label {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.08);
+    z-index: 11;
+    pointer-events: none;
+  }
+
+  .cell.selected .cell-label { color: rgba(90,90,255,0.25); }
+
+  .hint {
+    font-size: 11px;
+    color: #555;
+    text-align: center;
+    max-width: 500px;
+    line-height: 1.6;
+  }
+
+  .hint b { color: #888; }
+
+  .download-btn {
+    margin-top: 6px;
+    padding: 12px 28px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0c0c0f;
+    background: #20c997;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    box-shadow: 0 4px 12px rgba(32, 201, 151, 0.15);
+  }
+
+  .download-btn:hover { background: #1eb588; }
+  .download-btn:active { transform: scale(0.97); }
+  .download-btn:disabled { background: #444; color: #888; cursor: not-allowed; box-shadow: none; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar with template tabs -->
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-title">Templates</div>
+  <!-- Tabs will be generated dynamically -->
+</div>
+
+<!-- Main editor area -->
+<div class="main-content">
+  <h1>Canvas Frame Editor</h1>
+
+  <div class="top-bar">
+    <button id="bulkUploadBtn">Upload Images</button>
+    <input type="file" id="bulkFileInput" multiple accept="image/*,.mpo" style="display: none;">
+    
+    <span class="selected-label" id="selectedLabel">Click a frame to select it</span>
+    <span class="zoom-display" id="zoomDisplay"></span>
+    <button id="resetBtn">Reset Selected</button>
+    <button id="resetAllBtn">Reset All</button>
+  </div>
+
+  <div class="canvas-area" id="canvasArea"></div>
+
+  <div class="hint">
+    Click to select · Click empty frame to upload · Drag to pan · Scroll to zoom<br/>
+    <b>Double-click and drag</b> to swap images · <b>Ctrl+Click</b> to replace image
+  </div>
+
+  <button id="downloadBtn" class="download-btn">Download Canvas (PNG)</button>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                                                                        ║
+// ║   SHAPE LIBRARY                                                        ║
+// ║                                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const SHAPES = {
+  amoeba: {
+    viewBox: '0 0 120 80',
+    path: 'M60 6 C78 4 95 12 104 24 C112 36 108 48 98 56 C90 62 78 64 68 68 C58 72 48 74 38 70 C28 66 18 60 12 50 C6 40 4 28 12 18 C20 8 38 8 60 6 Z'
+  },
+  heart: {
+    viewBox: '0 0 100 100',
+    path: 'M50 88 C38 78 8 58 8 36 C8 20 20 8 36 8 C44 8 50 14 50 14 C50 14 56 8 64 8 C80 8 92 20 92 36 C92 58 62 78 50 88 Z'
+  },
+  splat: {
+    viewBox: '0 0 100 100',
+    path: 'M50 8 C58 8 65 18 70 22 C78 16 88 14 90 22 C93 32 84 38 80 44 C86 50 92 58 88 66 C84 74 74 72 68 70 C66 78 60 88 50 90 C40 88 34 78 32 70 C26 72 16 74 12 66 C8 58 14 50 20 44 C16 38 7 32 10 22 C12 14 22 16 30 22 C35 18 42 8 50 8 Z'
+  },
+  peanut: {
+    viewBox: '0 0 130 70',
+    path: 'M30 10 C44 4 56 10 62 18 C66 12 74 6 88 8 C104 10 118 24 116 38 C114 52 100 64 86 62 C76 60 68 54 64 48 C60 54 52 62 40 64 C26 66 10 56 8 40 C6 26 16 14 30 10 Z'
+  },
+  cross: {
+    viewBox: '0 0 100 100',
+    path: 'M50 6 C58 6 62 18 62 28 C70 22 82 14 90 20 C96 26 90 40 82 46 C88 50 96 56 94 66 C90 76 78 78 68 72 C64 80 58 92 50 94 C42 92 36 80 32 72 C22 78 10 76 6 66 C4 56 12 50 18 46 C10 40 4 26 10 20 C18 14 30 22 38 28 C38 18 42 6 50 6 Z'
+  },
+  bean: {
+    viewBox: '0 0 130 80',
+    path: 'M40 10 C56 4 72 6 86 12 C100 18 116 30 118 44 C120 58 108 70 92 72 C76 74 64 68 54 60 C46 66 34 74 22 72 C10 70 2 58 4 44 C6 30 20 16 40 10 Z'
+  }
+};
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                                                                        ║
+// ║   TEMPLATE CONFIGURATIONS                                              ║
+// ║                                                                        ║
+// ║   To add a new template, simply push a new object into this array.     ║
+// ║   No other code changes are needed.                                    ║
+// ║                                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const TEMPLATES = [
+  {
+    name: 'Organic Collage',
+    description: '600×1200 · 4 frames',
+    canvasW: 600,
+    canvasH: 1200,
+    bgColor: '#0c0c0f',
+    bgImage: 'background.jpg',
+    frames: [
+      { x: 30, y: 50, w: 540, h: 360, shape: 'amoeba', label: 'Amoeba' },
+      { x: 100, y: 550, w: 400, h: 400, shape: 'heart', label: 'Heart' },
+      { x: 10, y: 550, w: 200, h: 200, shape: 'peanut', label: 'Peanut' },
+      { x: 10, y: 700, w: 200, h: 120, shape: 'cross', label: 'Cross' },
+    ],
+  },
+  {
+    name: 'Grid Mosaic',
+    description: '800×800 · 5 frames',
+    canvasW: 800,
+    canvasH: 800,
+    bgColor: '#0f0f14',
+    bgImage: 'background1.jpg',
+    frames: [
+      { x: 20, y: 20, w: 370, h: 370, shape: 'splat', label: 'Splat' },
+      { x: 410, y: 20, w: 370, h: 170, shape: 'bean', label: 'Bean' },
+      { x: 410, y: 210, w: 370, h: 180, shape: null, label: 'Rectangle' },
+      { x: 20, y: 410, w: 500, h: 370, shape: 'amoeba', label: 'Amoeba' },
+      { x: 540, y: 410, w: 240, h: 370, shape: 'heart', label: 'Heart' },
+    ],
+  },
+  {
+    name: 'Tall Story',
+    description: '500×1400 · 6 frames',
+    canvasW: 1400,
+    canvasH: 800,
+    bgColor: '#0a0a10',
+    bgImage: 'background2.jpg',
+    frames: [
+      { x: 20, y: 20, w: 460, h: 280, shape: 'bean', label: 'Bean' },
+      { x: 20, y: 320, w: 220, h: 220, shape: 'heart', label: 'Heart' },
+      { x: 260, y: 320, w: 220, h: 220, shape: 'cross', label: 'Cross' },
+      { x: 500, y: 20, w: 460, h: 280, shape: 'bean', label: 'Bean' },
+      { x: 800, y: 320, w: 220, h: 220, shape: 'heart', label: 'Heart' },
+
+    ],
+  },
+];
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   FRAME BORDER (for empty frames)                                      ║
+// ║   Adjust these to change the border around frames without images.      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const FRAME_BORDER_WIDTH = 1.5;           // px
+const FRAME_BORDER_COLOR = 'rgba(255, 255, 255, 0.36)';
+
+// Inject as CSS custom properties so both CSS and SVG can reference them
+document.documentElement.style.setProperty('--frame-border-width', FRAME_BORDER_WIDTH + 'px');
+document.documentElement.style.setProperty('--frame-border-width-num', FRAME_BORDER_WIDTH);
+document.documentElement.style.setProperty('--frame-border-color', FRAME_BORDER_COLOR);
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                                                                        ║
+// ║   EVERYTHING BELOW IS AUTOMATIC                                        ║
+// ║   (no changes needed when adding templates)                            ║
+// ║                                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const MIN_SCALE = 0.05;
+const MAX_SCALE = 10;
+const ZOOM_STEP = 0.08;
+
+// ===================== SVG PATH SCALER =====================
+function scalePath(pathStr, viewBox, frameW, frameH) {
+  const [, , vw, vh] = viewBox.split(' ').map(Number);
+  const sx = frameW / vw;
+  const sy = frameH / vh;
+  return scalePathCoords(pathStr, sx, sy);
+}
+
+function scalePathCoords(d, sx, sy) {
+  const tokens = d.match(/[a-zA-Z]|[-+]?(?:\d+\.?\d*|\.\d+)/g);
+  if (!tokens) return d;
+
+  let result = '';
+  let i = 0;
+
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (/^[a-zA-Z]$/.test(t)) {
+      result += t;
+      i++;
+      if (t === 'Z' || t === 'z') continue;
+
+      const paramCounts = {
+        M:2,m:2,L:2,l:2,H:1,h:1,V:1,v:1,
+        C:6,c:6,S:4,s:4,Q:4,q:4,T:2,t:2,A:7,a:7
+      };
+      const count = paramCounts[t] || 0;
+
+      while (i < tokens.length && !/^[a-zA-Z]$/.test(tokens[i])) {
+        const params = [];
+        for (let j = 0; j < count && i < tokens.length && !/^[a-zA-Z]$/.test(tokens[i]); j++) {
+          params.push(parseFloat(tokens[i]));
+          i++;
+        }
+        const upper = t.toUpperCase();
+        if (upper === 'H') {
+          result += params.map(v => (v * sx).toFixed(2)).join(' ');
+        } else if (upper === 'V') {
+          result += params.map(v => (v * sy).toFixed(2)).join(' ');
+        } else if (upper === 'A' && params.length === 7) {
+          result += `${(params[0]*sx).toFixed(2)} ${(params[1]*sy).toFixed(2)} ${params[2]} ${params[3]} ${params[4]} ${(params[5]*sx).toFixed(2)} ${(params[6]*sy).toFixed(2)}`;
+        } else {
+          for (let j = 0; j < params.length; j += 2) {
+            if (j + 1 < params.length) {
+              result += `${(params[j]*sx).toFixed(2)} ${(params[j+1]*sy).toFixed(2)} `;
+            } else {
+              result += `${(params[j]*sx).toFixed(2)} `;
+            }
+          }
+        }
+        result += ' ';
+      }
+    } else {
+      i++;
+    }
+  }
+  return result.trim();
+}
+
+function getScaledPath(frame) {
+  if (frame._scaledPath) return frame._scaledPath;
+  if (!frame.shape) return null;
+  const shapeDef = SHAPES[frame.shape];
+  if (!shapeDef) return null;
+  frame._scaledPath = scalePath(shapeDef.path, shapeDef.viewBox, frame.w, frame.h);
+  return frame._scaledPath;
+}
+
+// ===================== PER-TEMPLATE STATE STORE =====================
+// Each template gets its own isolated state object, created once and reused.
+const templateStates = TEMPLATES.map(() => null); // lazily initialized
+let activeTemplateIndex = -1;
+
+// Pointers into the active template's state (set by switchTemplate)
+let cells = [];
+let selectedIndex = -1;
+let CANVAS_W, CANVAS_H, CANVAS_BG_COLOR, CANVAS_BG_IMAGE, FRAMES;
+let bgImg = null, bgLoaded = false;
+
+// Drag / swap / resize state (transient — per interaction, not persisted)
+let dragging = false, dragCellIdx = -1;
+let dragStartX, dragStartY, dragStartPosX, dragStartPosY;
+let swapping = false, swapSourceIdx = -1, swapTargetIdx = -1;
+let resizing = false, resizeCellIdx = -1;
+let resizeHandle = '', resizeStartX, resizeStartY, resizeStartScale, resizeStartPosX, resizeStartPosY;
+
+// DOM refs
+const sidebar      = document.getElementById('sidebar');
+const canvasArea    = document.getElementById('canvasArea');
+const zoomDisplay   = document.getElementById('zoomDisplay');
+const selectedLabel = document.getElementById('selectedLabel');
+
+// ===================== BUILD SIDEBAR TABS =====================
+const tabButtons = [];
+TEMPLATES.forEach((tmpl, idx) => {
+  const btn = document.createElement('button');
+  btn.className = 'tab-btn';
+  btn.innerHTML = `${tmpl.name}<span class="tab-meta">${tmpl.description || ''}</span>`;
+  btn.addEventListener('click', () => switchTemplate(idx));
+  sidebar.appendChild(btn);
+  tabButtons.push(btn);
+});
+
+// ===================== TEMPLATE SWITCHING =====================
+function switchTemplate(idx) {
+  if (idx === activeTemplateIndex) return;
+
+  // Cancel any in-progress interactions
+  cancelInteractions();
+
+  // Save nothing — state is already stored in templateStates[activeTemplateIndex]
+
+  // Update tab UI
+  tabButtons.forEach((b, i) => b.classList.toggle('active', i === idx));
+  activeTemplateIndex = idx;
+
+  const tmpl = TEMPLATES[idx];
+  CANVAS_W = tmpl.canvasW;
+  CANVAS_H = tmpl.canvasH;
+  CANVAS_BG_COLOR = tmpl.bgColor;
+  CANVAS_BG_IMAGE = tmpl.bgImage;
+  FRAMES = tmpl.frames;
+
+  // Ensure scaled paths are computed for this template's frames
+  FRAMES.forEach(f => getScaledPath(f));
+
+  // Size the canvas
+  canvasArea.style.width  = CANVAS_W + 'px';
+  canvasArea.style.height = CANVAS_H + 'px';
+  canvasArea.style.background = CANVAS_BG_COLOR;
+
+  // Initialize state for this template if first visit
+  if (!templateStates[idx]) {
+    templateStates[idx] = createTemplateState(tmpl);
+  }
+
+  const state = templateStates[idx];
+  cells = state.cells;
+  selectedIndex = state.selectedIndex;
+  bgImg = state.bgImg;
+  bgLoaded = state.bgLoaded;
+
+  // Rebuild DOM: clear canvas, re-append cells
+  canvasArea.innerHTML = '';
+  cells.forEach(s => canvasArea.appendChild(s.el));
+
+  // Re-apply background
+  if (state.bgLoaded) {
+    canvasArea.style.backgroundImage = `url('${CANVAS_BG_IMAGE}')`;
+    canvasArea.style.backgroundSize = 'cover';
+    canvasArea.style.backgroundPosition = 'center';
+    canvasArea.style.backgroundRepeat = 'no-repeat';
+  } else {
+    canvasArea.style.backgroundImage = 'none';
+  }
+
+  // Re-apply selection highlight
+  cells.forEach((s, i) => {
+    s.el.classList.toggle('selected', i === selectedIndex);
+  });
+
+  updateLabel();
+}
+
+function cancelInteractions() {
+  if (swapping) {
+    cells.forEach(c => c.el.classList.remove('swap-source', 'swap-target', 'swapping'));
+  }
+  if (dragging && dragCellIdx >= 0) cells[dragCellIdx]?.el.classList.remove('dragging');
+  dragging = false; dragCellIdx = -1;
+  swapping = false; swapSourceIdx = -1; swapTargetIdx = -1;
+  resizing = false; resizeCellIdx = -1;
+}
+
+// ===================== CREATE ISOLATED STATE FOR A TEMPLATE =====================
+function createTemplateState(tmpl) {
+  const state = {
+    cells: [],
+    selectedIndex: -1,
+    bgImg: new Image(),
+    bgLoaded: false,
+  };
+
+  // Background image
+  state.bgImg.crossOrigin = 'anonymous';
+  state.bgImg.onload = () => {
+    state.bgLoaded = true;
+    // If this template is currently active, apply the background
+    if (TEMPLATES[activeTemplateIndex] === tmpl) {
+      bgLoaded = true;
+      canvasArea.style.backgroundImage = `url('${tmpl.bgImage}')`;
+      canvasArea.style.backgroundSize = 'cover';
+      canvasArea.style.backgroundPosition = 'center';
+      canvasArea.style.backgroundRepeat = 'no-repeat';
+    }
+  };
+  state.bgImg.onerror = () => {
+    if (state.bgImg.crossOrigin) {
+      state.bgImg.removeAttribute('crossOrigin');
+      state.bgImg.src = tmpl.bgImage;
+    }
+  };
+  state.bgImg.src = tmpl.bgImage;
+
+  // Build cells
+  tmpl.frames.forEach((cfg, i) => {
+    getScaledPath(cfg);
+
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.index = i;
+
+    cell.style.left   = cfg.x + 'px';
+    cell.style.top    = cfg.y + 'px';
+    cell.style.width  = cfg.w + 'px';
+    cell.style.height = cfg.h + 'px';
+
+    const sp = getScaledPath(cfg);
+    if (sp) {
+      cell.classList.add('shaped');
+      cell.style.clipPath = `path('${sp}')`;
+    }
+
+    const lbl = document.createElement('div');
+    lbl.className = 'cell-label';
+    lbl.textContent = cfg.label || `Frame ${i + 1}`;
+    cell.appendChild(lbl);
+
+    if (sp) {
+      const outline = document.createElement('div');
+      outline.className = 'shape-outline';
+      outline.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="outline-path" d="${sp}"/></svg>`;
+      cell.appendChild(outline);
+    }
+
+    const upload = document.createElement('div');
+    upload.className = 'cell-upload';
+    upload.innerHTML = `
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <path d="M21 15l-5-5L5 21"/>
+      </svg>
+      <span>Upload</span>
+    `;
+    cell.appendChild(upload);
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*,.mpo';
+    cell.appendChild(fileInput);
+
+    const img = document.createElement('img');
+    cell.appendChild(img);
+
+    ['tl', 'tr', 'bl', 'br'].forEach(corner => {
+      const h = document.createElement('div');
+      h.className = `handle handle-${corner}`;
+      h.dataset.handle = corner;
+      cell.appendChild(h);
+    });
+
+    const cellState = {
+      el: cell,
+      img: img,
+      fileInput: fileInput,
+      upload: upload,
+      cfg: cfg,
+      naturalW: 0,
+      naturalH: 0,
+      scale: 1,
+      posX: 0,
+      posY: 0,
+      loaded: false,
+      lastClickTime: 0,
+      // Store a reference back to the template state for event handlers
+      _templateState: state,
+      _templateIndex: tmpl._index,
+      _cellIndex: i,
+    };
+
+    state.cells.push(cellState);
+
+    // ---- Event handlers (they capture cellState and state by closure) ----
+    upload.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectCellFor(state, i);
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      loadFileIntoCellState(file, cellState, state, i);
+      e.target.value = '';
+    });
+
+    cell.addEventListener('mousedown', (e) => {
+      // Ensure this template is active (clicks on detached DOM won't fire, but just in case)
+      if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
+
+      if (e.target.closest('.cell-upload')) return;
+      selectCellFor(state, i);
+
+      if ((e.ctrlKey || e.metaKey) && cellState.loaded) {
+        e.preventDefault();
+        e.stopPropagation();
+        cellState.fileInput.click();
+        return;
+      }
+
+      const now = Date.now();
+      if (cellState.loaded && (now - cellState.lastClickTime) < 300) {
+        e.preventDefault();
+        swapping = true;
+        swapSourceIdx = i;
+        cell.classList.add('swap-source', 'swapping');
+        cellState.lastClickTime = 0;
+        return;
+      }
+      cellState.lastClickTime = now;
+
+      if (e.target.classList.contains('handle') && cellState.loaded) {
+        e.stopPropagation();
+        resizing = true;
+        resizeCellIdx = i;
+        resizeHandle = e.target.dataset.handle;
+        resizeStartX = e.clientX;
+        resizeStartY = e.clientY;
+        resizeStartScale = cellState.scale;
+        resizeStartPosX = cellState.posX;
+        resizeStartPosY = cellState.posY;
+        return;
+      }
+
+      if (cellState.loaded) {
+        dragging = true;
+        dragCellIdx = i;
+        cell.classList.add('dragging');
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragStartPosX = cellState.posX;
+        dragStartPosY = cellState.posY;
+        e.preventDefault();
+      }
+    });
+
+    cell.addEventListener('wheel', (e) => {
+      if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
+      if (!cellState.loaded) return;
+      e.preventDefault();
+      selectCellFor(state, i);
+
+      const rect = cell.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const oldScale = cellState.scale;
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      cellState.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, cellState.scale + delta));
+      cellState.posX = mx - (mx - cellState.posX) * (cellState.scale / oldScale);
+      cellState.posY = my - (my - cellState.posY) * (cellState.scale / oldScale);
+      applyTransformFor(state, i);
+    }, { passive: false });
+  });
+
+  return state;
+}
+
+// ===================== STATE-AWARE HELPERS =====================
+function selectCellFor(state, i) {
+  if (state.selectedIndex === i) return;
+  if (state.selectedIndex >= 0) state.cells[state.selectedIndex].el.classList.remove('selected');
+  state.selectedIndex = i;
+  state.cells[i].el.classList.add('selected');
+  // Sync module-level selected index if this is the active template
+  selectedIndex = state.selectedIndex;
+  updateLabel();
+}
+
+function updateLabel() {
+  if (selectedIndex < 0) {
+    selectedLabel.textContent = 'Click a frame to select it';
+    zoomDisplay.textContent = '';
+    return;
+  }
+  const s = cells[selectedIndex];
+  selectedLabel.textContent = s.cfg.label || `Frame ${selectedIndex + 1}`;
+  zoomDisplay.textContent = s.loaded ? Math.round(s.scale * 100) + '%' : '';
+}
+
+function calculateDefaultTransform(s) {
+  if (!s.loaded) return;
+  s.scale = Math.max(s.cfg.w / s.naturalW, s.cfg.h / s.naturalH);
+  s.posX = (s.cfg.w - s.naturalW * s.scale) / 2;
+  s.posY = (s.cfg.h - s.naturalH * s.scale) / 2;
+}
+
+function applyTransformFor(state, i) {
+  const s = state.cells[i];
+  if (!s.loaded) { s.img.style.transform = 'none'; return; }
+  clampPosition(s);
+  s.img.style.transform = `translate(${s.posX}px, ${s.posY}px) scale(${s.scale})`;
+  if (state === templateStates[activeTemplateIndex] && i === selectedIndex) updateLabel();
+}
+
+function applyTransform(i) {
+  applyTransformFor(templateStates[activeTemplateIndex], i);
+}
+
+function clampPosition(s) {
+  const cw = s.cfg.w, ch = s.cfg.h;
+  const imgW = s.naturalW * s.scale;
+  const imgH = s.naturalH * s.scale;
+
+  if (imgW >= cw) {
+    s.posX = Math.min(0, Math.max(cw - imgW, s.posX));
+  } else {
+    s.posX = Math.max(0, Math.min(cw - imgW, s.posX));
+  }
+  if (imgH >= ch) {
+    s.posY = Math.min(0, Math.max(ch - imgH, s.posY));
+  } else {
+    s.posY = Math.max(0, Math.min(ch - imgH, s.posY));
+  }
+}
+
+function loadFileIntoCellState(file, cellState, state, i) {
+  if (cellState.img.src && cellState.img.src.startsWith('blob:')) {
+    URL.revokeObjectURL(cellState.img.src);
+  }
+
+  const url = URL.createObjectURL(file);
+  cellState.img.onload = () => {
+    cellState.naturalW = cellState.img.naturalWidth;
+    cellState.naturalH = cellState.img.naturalHeight;
+    cellState.loaded = true;
+    calculateDefaultTransform(cellState);
+    cellState.el.classList.add('has-image');
+    applyTransformFor(state, i);
+  };
+  cellState.img.src = url;
+}
+
+function performSwap(idxA, idxB) {
+  const a = cells[idxA];
+  const b = cells[idxB];
+
+  const siblingA = a.img.nextSibling;
+  const parentA = a.img.parentNode;
+  b.img.parentNode.insertBefore(a.img, b.img);
+  parentA.insertBefore(b.img, siblingA);
+
+  const tempImg = a.img;
+  a.img = b.img;
+  b.img = tempImg;
+
+  ['loaded', 'naturalW', 'naturalH'].forEach(p => {
+    const tmp = a[p]; a[p] = b[p]; b[p] = tmp;
+  });
+
+  [a, b].forEach(s => {
+    s.el.classList.toggle('has-image', s.loaded);
+  });
+
+  const sameShape = (a.cfg.w / a.cfg.h) === (b.cfg.w / b.cfg.h)
+                 && (a.cfg.shape || '') === (b.cfg.shape || '');
+
+  if (sameShape) {
+    ['scale', 'posX', 'posY'].forEach(p => {
+      const tmp = a[p]; a[p] = b[p]; b[p] = tmp;
+    });
+  } else {
+    calculateDefaultTransform(a);
+    calculateDefaultTransform(b);
+  }
+
+  applyTransform(idxA);
+  applyTransform(idxB);
+}
+
+// ===================== GLOBAL MOUSE / KEYBOARD HANDLERS =====================
+window.addEventListener('mousemove', (e) => {
+  if (swapping && swapSourceIdx >= 0) {
+    const hoveredEl = document.elementFromPoint(e.clientX, e.clientY);
+    const targetCell = hoveredEl ? hoveredEl.closest('.cell') : null;
+    cells.forEach(c => c.el.classList.remove('swap-target'));
+    if (targetCell) {
+      const tIdx = parseInt(targetCell.dataset.index);
+      if (tIdx !== swapSourceIdx && cells[tIdx].loaded) {
+        swapTargetIdx = tIdx;
+        targetCell.classList.add('swap-target');
+      } else {
+        swapTargetIdx = -1;
+      }
+    } else {
+      swapTargetIdx = -1;
+    }
+  }
+
+  if (dragging && dragCellIdx >= 0 && !swapping) {
+    const s = cells[dragCellIdx];
+    s.posX = dragStartPosX + (e.clientX - dragStartX);
+    s.posY = dragStartPosY + (e.clientY - dragStartY);
+    applyTransform(dragCellIdx);
+  }
+
+  if (resizing && resizeCellIdx >= 0 && !swapping) {
+    const s = cells[resizeCellIdx];
+    const dx = e.clientX - resizeStartX;
+    const dy = e.clientY - resizeStartY;
+    let dist;
+    if (resizeHandle === 'br') dist = Math.max(dx, dy);
+    else if (resizeHandle === 'bl') dist = Math.max(-dx, dy);
+    else if (resizeHandle === 'tr') dist = Math.max(dx, -dy);
+    else dist = Math.max(-dx, -dy);
+
+    s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, resizeStartScale + dist * 0.005));
+
+    if (resizeHandle === 'tl') {
+      s.posX = (resizeStartPosX + s.naturalW * resizeStartScale) - s.naturalW * s.scale;
+      s.posY = (resizeStartPosY + s.naturalH * resizeStartScale) - s.naturalH * s.scale;
+    } else if (resizeHandle === 'tr') {
+      s.posX = resizeStartPosX;
+      s.posY = (resizeStartPosY + s.naturalH * resizeStartScale) - s.naturalH * s.scale;
+    } else if (resizeHandle === 'bl') {
+      s.posX = (resizeStartPosX + s.naturalW * resizeStartScale) - s.naturalW * s.scale;
+      s.posY = resizeStartPosY;
+    } else {
+      s.posX = resizeStartPosX;
+      s.posY = resizeStartPosY;
+    }
+    applyTransform(resizeCellIdx);
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (swapping && swapSourceIdx >= 0) {
+    if (swapTargetIdx >= 0 && swapTargetIdx !== swapSourceIdx && cells[swapTargetIdx].loaded) {
+      performSwap(swapSourceIdx, swapTargetIdx);
+    }
+    cells.forEach(c => c.el.classList.remove('swap-source', 'swap-target', 'swapping'));
+    swapping = false;
+    swapSourceIdx = -1;
+    swapTargetIdx = -1;
+  }
+
+  if (dragging && dragCellIdx >= 0) cells[dragCellIdx].el.classList.remove('dragging');
+  dragging = false; dragCellIdx = -1;
+  resizing = false; resizeCellIdx = -1;
+});
+
+// ===================== BULK UPLOAD HANDLERS =====================
+const bulkUploadBtn = document.getElementById('bulkUploadBtn');
+const bulkFileInput = document.getElementById('bulkFileInput');
+
+bulkUploadBtn.addEventListener('click', () => {
+  bulkFileInput.click();
+});
+
+bulkFileInput.addEventListener('change', (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+
+  const state = templateStates[activeTemplateIndex];
+  let fileIdx = 0;
+
+  // Phase 1: fill empty frames
+  for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
+    if (!cells[i].loaded) {
+      loadFileIntoCellState(files[fileIdx], cells[i], state, i);
+      fileIdx++;
+    }
+  }
+
+  // Phase 2: overwrite existing frames
+  if (fileIdx < files.length) {
+    for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
+      if (cells[i].loaded) {
+        loadFileIntoCellState(files[fileIdx], cells[i], state, i);
+        fileIdx++;
+      }
+    }
+  }
+
+  e.target.value = '';
+});
+
+// ===================== RESET BUTTONS =====================
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (selectedIndex < 0) return;
+  const s = cells[selectedIndex];
+  if (!s.loaded) return;
+  calculateDefaultTransform(s);
+  applyTransform(selectedIndex);
+});
+
+document.getElementById('resetAllBtn').addEventListener('click', () => {
+  cells.forEach((s, i) => {
+    if (!s.loaded) return;
+    calculateDefaultTransform(s);
+    applyTransform(i);
+  });
+});
+
+// ===================== EXPORT ENGINE =====================
+function getBgDrawParams() {
+  const state = templateStates[activeTemplateIndex];
+  if (!state.bgLoaded) return null;
+  const bi = state.bgImg;
+  const scaleF = Math.max(CANVAS_W / bi.naturalWidth, CANVAS_H / bi.naturalHeight);
+  const drawW = bi.naturalWidth * scaleF;
+  const drawH = bi.naturalHeight * scaleF;
+  const drawX = (CANVAS_W - drawW) / 2;
+  const drawY = (CANVAS_H - drawH) / 2;
+  return { drawX, drawY, drawW, drawH };
+}
+
+function generateCanvasBlob(includeBackground) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Compute a scale factor that preserves the original resolution of uploaded images.
+      // For each loaded cell, the image is drawn at s.scale in canvas coordinates.
+      // To render at native resolution, we need exportScale >= 1/s.scale for every cell.
+      let exportScale = 1;
+      cells.forEach((s) => {
+        if (s.loaded && s.scale > 0) {
+          exportScale = Math.max(exportScale, 1 / s.scale);
+        }
+      });
+      // Cap to avoid extremely large canvases (max 8192px on either dimension)
+      const maxDim = Math.max(CANVAS_W, CANVAS_H);
+      exportScale = Math.min(exportScale, 8192 / maxDim);
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(CANVAS_W * exportScale);
+      canvas.height = Math.round(CANVAS_H * exportScale);
+      const ctx = canvas.getContext('2d');
+
+      ctx.scale(exportScale, exportScale);
+
+      ctx.fillStyle = CANVAS_BG_COLOR;
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+      if (includeBackground) {
+        const bgP = getBgDrawParams();
+        const state = templateStates[activeTemplateIndex];
+        if (bgP) ctx.drawImage(state.bgImg, bgP.drawX, bgP.drawY, bgP.drawW, bgP.drawH);
+      }
+
+      cells.forEach((s) => {
+        const cfg = s.cfg;
+        const sp = getScaledPath(cfg);
+
+        ctx.save();
+        ctx.translate(cfg.x, cfg.y);
+
+        if (sp) {
+          ctx.clip(new Path2D(sp));
+        } else {
+          ctx.beginPath();
+          ctx.rect(0, 0, cfg.w, cfg.h);
+          ctx.clip();
+        }
+
+        if (s.loaded) {
+          ctx.fillStyle = '#141417';
+          ctx.fillRect(0, 0, cfg.w, cfg.h);
+        }
+
+        if (s.loaded && s.img.naturalWidth > 0) {
+          ctx.translate(s.posX, s.posY);
+          ctx.scale(s.scale, s.scale);
+          ctx.drawImage(s.img, 0, 0);
+        }
+        ctx.restore();
+      });
+
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Blob generation failed.'));
+      }, 'image/png');
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// ===================== DOWNLOAD HANDLER =====================
+document.getElementById('downloadBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('downloadBtn');
+  const originalText = btn.textContent;
+  btn.textContent = 'Exporting…';
+  btn.disabled = true;
+
+  try {
+    let blob;
+    try {
+      blob = await generateCanvasBlob(true);
+    } catch (err) {
+      console.warn("Canvas Tainted. Exporting without background...", err);
+      blob = await generateCanvasBlob(false);
+      alert("Note: Due to strict browser security (CORS) on local files, the background image could not be exported. Your frames were successfully exported instead.\n\nTo include the background image in the future, run this file on a local web server (like Live Server).");
+    }
+
+    if (!blob) throw new Error("File generation failed");
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const tmplName = TEMPLATES[activeTemplateIndex].name.replace(/\s+/g, '-').toLowerCase();
+    a.download = `canvas-${tmplName}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+  } catch (error) {
+    console.error('Final export error:', error);
+    alert('A critical error occurred during export.');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
+
+// ===================== INIT: TAG TEMPLATES & ACTIVATE FIRST =====================
+TEMPLATES.forEach((t, i) => { t._index = i; });
+switchTemplate(0);
+</script>
+</body>
+</html>
