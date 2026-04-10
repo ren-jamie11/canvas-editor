@@ -292,6 +292,88 @@
   .download-btn:hover { background: #1eb588; }
   .download-btn:active { transform: scale(0.97); }
   .download-btn:disabled { background: #444; color: #888; cursor: not-allowed; box-shadow: none; }
+
+  /* ---- Lock BG toggle ---- */
+  .lock-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+    color: #777;
+  }
+
+  .lock-toggle input { display: none; }
+
+  .lock-toggle-slider {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    background: #2a2a30;
+    border-radius: 9px;
+    transition: background 0.2s;
+  }
+
+  .lock-toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: #666;
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .lock-toggle input:checked + .lock-toggle-slider {
+    background: #3a3a6a;
+  }
+
+  .lock-toggle input:checked + .lock-toggle-slider::after {
+    transform: translateX(14px);
+    background: #7a7aff;
+  }
+
+  .lock-toggle-text {
+    font-weight: 500;
+  }
+
+  /* ---- Background image element inside canvas ---- */
+  .canvas-bg-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .canvas-area.bg-unlocked {
+    cursor: grab;
+  }
+
+  .canvas-area.bg-unlocked.bg-dragging {
+    cursor: grabbing;
+  }
+
+  .canvas-area.bg-unlocked::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid rgba(90, 90, 255, 0.4);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* Ensure cells sit above bg image */
+  .cell {
+    z-index: 1;
+  }
 </style>
 </head>
 <body>
@@ -309,6 +391,15 @@
   <div class="top-bar">
     <button id="bulkUploadBtn">Upload Images</button>
     <input type="file" id="bulkFileInput" multiple accept="image/*,.mpo" style="display: none;">
+
+    <button id="changeBgBtn">Change Background</button>
+    <input type="file" id="bgFileInput" accept="image/*,.mpo" style="display: none;">
+
+    <label class="lock-toggle" id="lockToggleLabel">
+      <input type="checkbox" id="lockBgToggle" checked>
+      <span class="lock-toggle-slider"></span>
+      <span class="lock-toggle-text">Lock BG</span>
+    </label>
     
     <span class="selected-label" id="selectedLabel">Click a frame to select it</span>
     <span class="zoom-display" id="zoomDisplay"></span>
@@ -320,7 +411,9 @@
 
   <div class="hint">
     Click to select · Click empty frame to upload · Drag to pan · Scroll to zoom<br/>
-    <b>Double-click and drag</b> to swap images · <b>Ctrl+Click</b> to replace image
+    <b>Double-click and drag</b> to swap images · <b>Ctrl+Click</b> to replace image<br/>
+    <b>Shift+Drag</b> to move frame · <b>Shift+Scroll</b> to resize frame<br/>
+    Unlock background to drag &amp; scroll-zoom the background image
   </div>
 
   <button id="downloadBtn" class="download-btn">Download Canvas (PNG)</button>
@@ -529,6 +622,14 @@ let swapping = false, swapSourceIdx = -1, swapTargetIdx = -1;
 let resizing = false, resizeCellIdx = -1;
 let resizeHandle = '', resizeStartX, resizeStartY, resizeStartScale, resizeStartPosX, resizeStartPosY;
 
+// Frame-level dragging (Shift+click+drag)
+let frameDragging = false, frameDragIdx = -1;
+let frameDragStartX, frameDragStartY, frameDragStartFrameX, frameDragStartFrameY;
+
+// Background dragging state (when bg is unlocked)
+let bgDragging = false;
+let bgDragStartX, bgDragStartY, bgDragStartPosX, bgDragStartPosY;
+
 // DOM refs
 const sidebar      = document.getElementById('sidebar');
 const canvasArea    = document.getElementById('canvasArea');
@@ -585,19 +686,19 @@ function switchTemplate(idx) {
   bgImg = state.bgImg;
   bgLoaded = state.bgLoaded;
 
-  // Rebuild DOM: clear canvas, re-append cells
+  // Rebuild DOM: clear canvas, add bg element then cells
   canvasArea.innerHTML = '';
+  canvasArea.style.backgroundImage = 'none';
+  if (state.bgEl) {
+    canvasArea.appendChild(state.bgEl);
+    if (state.bgLoaded) {
+      applyBgTransform(state);
+    }
+  }
   cells.forEach(s => canvasArea.appendChild(s.el));
 
-  // Re-apply background
-  if (state.bgLoaded) {
-    canvasArea.style.backgroundImage = `url('${CANVAS_BG_IMAGE}')`;
-    canvasArea.style.backgroundSize = 'cover';
-    canvasArea.style.backgroundPosition = 'center';
-    canvasArea.style.backgroundRepeat = 'no-repeat';
-  } else {
-    canvasArea.style.backgroundImage = 'none';
-  }
+  // Update lock toggle visual state
+  updateBgLockUI();
 
   // Re-apply selection highlight
   cells.forEach((s, i) => {
@@ -613,6 +714,10 @@ function cancelInteractions() {
   }
   if (dragging && dragCellIdx >= 0) cells[dragCellIdx]?.el.classList.remove('dragging');
   dragging = false; dragCellIdx = -1;
+  if (frameDragging && frameDragIdx >= 0) cells[frameDragIdx]?.el.classList.remove('dragging');
+  frameDragging = false; frameDragIdx = -1;
+  if (bgDragging) canvasArea.classList.remove('bg-dragging');
+  bgDragging = false;
   swapping = false; swapSourceIdx = -1; swapTargetIdx = -1;
   resizing = false; resizeCellIdx = -1;
 }
@@ -624,19 +729,33 @@ function createTemplateState(tmpl) {
     selectedIndex: -1,
     bgImg: new Image(),
     bgLoaded: false,
+    // Background transform state (like an image inside a "canvas-sized frame")
+    bgScale: 1,
+    bgPosX: 0,
+    bgPosY: 0,
+    bgNaturalW: 0,
+    bgNaturalH: 0,
+    // The actual DOM img element rendered inside the canvas
+    bgEl: null,
   };
+
+  // Create the bg img element for the canvas
+  const bgEl = document.createElement('img');
+  bgEl.className = 'canvas-bg-img';
+  state.bgEl = bgEl;
 
   // Background image
   state.bgImg.crossOrigin = 'anonymous';
   state.bgImg.onload = () => {
     state.bgLoaded = true;
+    state.bgNaturalW = state.bgImg.naturalWidth;
+    state.bgNaturalH = state.bgImg.naturalHeight;
+    calculateDefaultBgTransform(state, tmpl);
+    bgEl.src = state.bgImg.src;
     // If this template is currently active, apply the background
     if (TEMPLATES[activeTemplateIndex] === tmpl) {
       bgLoaded = true;
-      canvasArea.style.backgroundImage = `url('${tmpl.bgImage}')`;
-      canvasArea.style.backgroundSize = 'cover';
-      canvasArea.style.backgroundPosition = 'center';
-      canvasArea.style.backgroundRepeat = 'no-repeat';
+      applyBgTransform(state);
     }
   };
   state.bgImg.onerror = () => {
@@ -645,7 +764,9 @@ function createTemplateState(tmpl) {
       state.bgImg.src = tmpl.bgImage;
     }
   };
-  state.bgImg.src = tmpl.bgImage;
+  if (tmpl.bgImage) {
+    state.bgImg.src = tmpl.bgImage;
+  }
 
   // Build cells
   tmpl.frames.forEach((cfg, i) => {
@@ -728,6 +849,7 @@ function createTemplateState(tmpl) {
 
     // ---- Event handlers (they capture cellState and state by closure) ----
     upload.addEventListener('click', (e) => {
+      if (e.shiftKey) return; // let frame drag handle it
       e.stopPropagation();
       selectCellFor(state, i);
       fileInput.click();
@@ -744,8 +866,22 @@ function createTemplateState(tmpl) {
       // Ensure this template is active (clicks on detached DOM won't fire, but just in case)
       if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
 
-      if (e.target.closest('.cell-upload')) return;
+      if (e.target.closest('.cell-upload') && !e.shiftKey) return;
       selectCellFor(state, i);
+
+      // Shift+click: start frame dragging (reposition the frame itself)
+      if (e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        frameDragging = true;
+        frameDragIdx = i;
+        frameDragStartX = e.clientX;
+        frameDragStartY = e.clientY;
+        frameDragStartFrameX = cellState.cfg.x;
+        frameDragStartFrameY = cellState.cfg.y;
+        cell.classList.add('dragging');
+        return;
+      }
 
       if ((e.ctrlKey || e.metaKey) && cellState.loaded) {
         e.preventDefault();
@@ -792,9 +928,45 @@ function createTemplateState(tmpl) {
 
     cell.addEventListener('wheel', (e) => {
       if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
-      if (!cellState.loaded) return;
       e.preventDefault();
       selectCellFor(state, i);
+
+      // Shift+scroll: resize the frame itself (maintaining aspect ratio)
+      if (e.shiftKey) {
+        const cfg = cellState.cfg;
+        const aspect = cfg.w / cfg.h;
+        const delta = e.deltaY > 0 ? -5 : 5;
+        const newW = cfg.w + delta;
+        const newH = newW / aspect;
+
+        // Enforce minimum size
+        if (newW < 30 || newH < 30) return;
+
+        // Clamp to canvas boundaries
+        if (cfg.x + newW > CANVAS_W || cfg.y + newH > CANVAS_H) return;
+        if (newW <= 0 || newH <= 0) return;
+
+        cfg.w = newW;
+        cfg.h = newH;
+
+        // Update DOM
+        cell.style.width = cfg.w + 'px';
+        cell.style.height = cfg.h + 'px';
+
+        // Recompute scaled path for shaped frames
+        updateFrameShape(cellState);
+
+        // Recalculate image transform to maintain coverage
+        if (cellState.loaded) {
+          calculateDefaultTransform(cellState);
+          applyTransformFor(state, i);
+        }
+
+        updateLabel();
+        return;
+      }
+
+      if (!cellState.loaded) return;
 
       const rect = cell.getBoundingClientRect();
       const mx = e.clientX - rect.left;
@@ -809,6 +981,56 @@ function createTemplateState(tmpl) {
   });
 
   return state;
+}
+
+// ===================== BACKGROUND TRANSFORM HELPERS =====================
+function calculateDefaultBgTransform(state, tmpl) {
+  if (!state.bgLoaded) return;
+  const cw = tmpl ? tmpl.canvasW : CANVAS_W;
+  const ch = tmpl ? tmpl.canvasH : CANVAS_H;
+  state.bgScale = Math.max(cw / state.bgNaturalW, ch / state.bgNaturalH);
+  state.bgPosX = (cw - state.bgNaturalW * state.bgScale) / 2;
+  state.bgPosY = (ch - state.bgNaturalH * state.bgScale) / 2;
+}
+
+function applyBgTransform(state) {
+  if (!state.bgEl || !state.bgLoaded) return;
+  clampBgPosition(state);
+  state.bgEl.style.transform = `translate(${state.bgPosX}px, ${state.bgPosY}px) scale(${state.bgScale})`;
+}
+
+function clampBgPosition(state) {
+  const cw = CANVAS_W, ch = CANVAS_H;
+  const imgW = state.bgNaturalW * state.bgScale;
+  const imgH = state.bgNaturalH * state.bgScale;
+
+  if (imgW >= cw) {
+    state.bgPosX = Math.min(0, Math.max(cw - imgW, state.bgPosX));
+  } else {
+    state.bgPosX = Math.max(0, Math.min(cw - imgW, state.bgPosX));
+  }
+  if (imgH >= ch) {
+    state.bgPosY = Math.min(0, Math.max(ch - imgH, state.bgPosY));
+  } else {
+    state.bgPosY = Math.max(0, Math.min(ch - imgH, state.bgPosY));
+  }
+}
+
+// ===================== FRAME SHAPE UPDATE HELPER =====================
+function updateFrameShape(cellState) {
+  const cfg = cellState.cfg;
+  // Clear cached scaled path so it gets recomputed
+  delete cfg._scaledPath;
+  const sp = getScaledPath(cfg);
+
+  if (sp) {
+    cellState.el.style.clipPath = `path('${sp}')`;
+    // Update the shape outline SVG if present
+    const outlineEl = cellState.el.querySelector('.shape-outline');
+    if (outlineEl) {
+      outlineEl.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="outline-path" d="${sp}"/></svg>`;
+    }
+  }
 }
 
 // ===================== STATE-AWARE HELPERS =====================
@@ -949,6 +1171,23 @@ window.addEventListener('mousemove', (e) => {
     applyTransform(dragCellIdx);
   }
 
+  // Frame-level dragging (Shift+drag to reposition frame)
+  if (frameDragging && frameDragIdx >= 0) {
+    const s = cells[frameDragIdx];
+    const cfg = s.cfg;
+    let newX = frameDragStartFrameX + (e.clientX - frameDragStartX);
+    let newY = frameDragStartFrameY + (e.clientY - frameDragStartY);
+
+    // Clamp to canvas boundaries
+    newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
+    newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
+
+    cfg.x = newX;
+    cfg.y = newY;
+    s.el.style.left = cfg.x + 'px';
+    s.el.style.top = cfg.y + 'px';
+  }
+
   if (resizing && resizeCellIdx >= 0 && !swapping) {
     const s = cells[resizeCellIdx];
     const dx = e.clientX - resizeStartX;
@@ -976,6 +1215,14 @@ window.addEventListener('mousemove', (e) => {
     }
     applyTransform(resizeCellIdx);
   }
+
+  // Background dragging (when unlocked)
+  if (bgDragging) {
+    const state = templateStates[activeTemplateIndex];
+    state.bgPosX = bgDragStartPosX + (e.clientX - bgDragStartX);
+    state.bgPosY = bgDragStartPosY + (e.clientY - bgDragStartY);
+    applyBgTransform(state);
+  }
 });
 
 window.addEventListener('mouseup', () => {
@@ -991,6 +1238,10 @@ window.addEventListener('mouseup', () => {
 
   if (dragging && dragCellIdx >= 0) cells[dragCellIdx].el.classList.remove('dragging');
   dragging = false; dragCellIdx = -1;
+  if (frameDragging && frameDragIdx >= 0) cells[frameDragIdx].el.classList.remove('dragging');
+  frameDragging = false; frameDragIdx = -1;
+  if (bgDragging) canvasArea.classList.remove('bg-dragging');
+  bgDragging = false;
   resizing = false; resizeCellIdx = -1;
 });
 
@@ -1047,16 +1298,102 @@ document.getElementById('resetAllBtn').addEventListener('click', () => {
   });
 });
 
+// ===================== BACKGROUND CHANGE & LOCK HANDLERS =====================
+const changeBgBtn = document.getElementById('changeBgBtn');
+const bgFileInput = document.getElementById('bgFileInput');
+const lockBgToggle = document.getElementById('lockBgToggle');
+
+changeBgBtn.addEventListener('click', () => {
+  bgFileInput.click();
+});
+
+bgFileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const state = templateStates[activeTemplateIndex];
+  const url = URL.createObjectURL(file);
+
+  // Revoke old blob URL if any
+  if (state.bgEl.src && state.bgEl.src.startsWith('blob:')) {
+    URL.revokeObjectURL(state.bgEl.src);
+  }
+
+  const newImg = new Image();
+  newImg.onload = () => {
+    state.bgImg = newImg;
+    state.bgLoaded = true;
+    state.bgNaturalW = newImg.naturalWidth;
+    state.bgNaturalH = newImg.naturalHeight;
+    bgLoaded = true;
+    calculateDefaultBgTransform(state, TEMPLATES[activeTemplateIndex]);
+    state.bgEl.src = url;
+    applyBgTransform(state);
+  };
+  newImg.src = url;
+  e.target.value = '';
+});
+
+function updateBgLockUI() {
+  const locked = lockBgToggle.checked;
+  canvasArea.classList.toggle('bg-unlocked', !locked);
+}
+
+lockBgToggle.addEventListener('change', () => {
+  updateBgLockUI();
+});
+
+// Canvas-level mousedown for background panning (only when unlocked)
+canvasArea.addEventListener('mousedown', (e) => {
+  if (lockBgToggle.checked) return;
+  // Only start bg drag if clicking directly on canvasArea or the bg image, not on a cell
+  if (e.target.closest('.cell')) return;
+
+  const state = templateStates[activeTemplateIndex];
+  if (!state.bgLoaded) return;
+
+  e.preventDefault();
+  bgDragging = true;
+  bgDragStartX = e.clientX;
+  bgDragStartY = e.clientY;
+  bgDragStartPosX = state.bgPosX;
+  bgDragStartPosY = state.bgPosY;
+  canvasArea.classList.add('bg-dragging');
+});
+
+// Canvas-level wheel for background zooming (only when unlocked)
+canvasArea.addEventListener('wheel', (e) => {
+  if (lockBgToggle.checked) return;
+  // Only zoom bg if scrolling on canvas itself, not on a cell
+  if (e.target.closest('.cell')) return;
+
+  const state = templateStates[activeTemplateIndex];
+  if (!state.bgLoaded) return;
+
+  e.preventDefault();
+
+  const rect = canvasArea.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const oldScale = state.bgScale;
+  const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+  state.bgScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, state.bgScale + delta));
+  // Zoom toward cursor
+  state.bgPosX = mx - (mx - state.bgPosX) * (state.bgScale / oldScale);
+  state.bgPosY = my - (my - state.bgPosY) * (state.bgScale / oldScale);
+  applyBgTransform(state);
+}, { passive: false });
+
+// Add bg dragging to the global mousemove
+
 // ===================== EXPORT ENGINE =====================
 function getBgDrawParams() {
   const state = templateStates[activeTemplateIndex];
   if (!state.bgLoaded) return null;
-  const bi = state.bgImg;
-  const scaleF = Math.max(CANVAS_W / bi.naturalWidth, CANVAS_H / bi.naturalHeight);
-  const drawW = bi.naturalWidth * scaleF;
-  const drawH = bi.naturalHeight * scaleF;
-  const drawX = (CANVAS_W - drawW) / 2;
-  const drawY = (CANVAS_H - drawH) / 2;
+  const drawW = state.bgNaturalW * state.bgScale;
+  const drawH = state.bgNaturalH * state.bgScale;
+  const drawX = state.bgPosX;
+  const drawY = state.bgPosY;
   return { drawX, drawY, drawW, drawH };
 }
 
