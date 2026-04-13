@@ -6,6 +6,7 @@
 <title>Canvas Frame Editor</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=Montserrat:ital,wght@0,400;0,700;1,400;1,700&family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=Oswald:wght@400;700&family=Raleway:ital,wght@0,400;0,700;1,400;1,700&family=Merriweather:ital,wght@0,400;0,700;1,400;1,700&family=Poppins:ital,wght@0,400;0,700;1,400;1,700&family=Bebas+Neue&family=Abril+Fatface&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400;1,700&family=Roboto+Slab:wght@400;700&family=Dancing+Script:wght@400;700&family=Bitter:ital,wght@0,400;0,700;1,400;1,700&family=Nunito:ital,wght@0,400;0,700;1,400;1,700&family=Crimson+Text:ital,wght@0,400;0,700;1,400;1,700&family=Archivo+Black&family=Source+Serif+4:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -420,6 +421,230 @@
     pointer-events: none;
     z-index: 200;
   }
+
+  /* ---- Right sidebar (tools panel) ---- */
+  .right-sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: #111114;
+    border-left: 1px solid #1e1e24;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
+  .rs-section {
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid #1e1e24;
+  }
+
+  .rs-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 10px;
+  }
+
+  .rs-tool-btn {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 9px 12px;
+    border: 1px solid #2a2a30;
+    border-radius: 5px;
+    background: #18181c;
+    color: #aaa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+
+  .rs-tool-btn:hover { background: #222228; border-color: #444; color: #ddd; }
+  .rs-tool-btn.active { background: #252540; border-color: #5a5aff; color: #c0c0ff; }
+
+  .rs-tool-btn svg { flex-shrink: 0; opacity: 0.6; }
+  .rs-tool-btn.active svg { opacity: 1; }
+
+  /* Text formatting controls */
+  .rs-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .rs-row.wrap { flex-wrap: wrap; }
+
+  .rs-select {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 6px;
+    border: 1px solid #2a2a30;
+    border-radius: 4px;
+    background: #18181c;
+    color: #ccc;
+    cursor: pointer;
+    outline: none;
+  }
+  .rs-select:focus { border-color: #5a5aff; }
+
+  .rs-select-font { flex: 1; min-width: 0; }
+  .rs-select-size { width: 54px; }
+
+  .rs-icon-btn {
+    font-family: inherit;
+    font-size: 12px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #2a2a30;
+    border-radius: 4px;
+    background: #18181c;
+    color: #999;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .rs-icon-btn:hover { background: #222228; border-color: #444; color: #ddd; }
+  .rs-icon-btn.active { background: #252540; border-color: #5a5aff; color: #c0c0ff; }
+
+  /* Color picker area */
+  .rs-color-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .rs-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.12s, transform 0.1s;
+    box-sizing: border-box;
+  }
+  .rs-swatch:hover { transform: scale(1.15); }
+  .rs-swatch.active { border-color: #fff; }
+
+  .rs-swatch-white { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2); }
+
+  .rs-color-custom-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .rs-color-preview {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px solid #333;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rs-color-preview input[type="color"] {
+    position: absolute;
+    inset: -4px;
+    width: calc(100% + 8px);
+    height: calc(100% + 8px);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+  }
+
+  .rs-hex-input {
+    font-family: 'DM Sans', monospace;
+    font-size: 11px;
+    padding: 5px 6px;
+    border: 1px solid #2a2a30;
+    border-radius: 4px;
+    background: #18181c;
+    color: #ccc;
+    width: 80px;
+    outline: none;
+  }
+  .rs-hex-input:focus { border-color: #5a5aff; }
+
+  .rs-disabled { opacity: 0.35; pointer-events: none; }
+
+  /* ---- Text box on canvas ---- */
+  .text-box {
+    position: absolute;
+    z-index: 10;
+    cursor: move;
+    min-width: 20px;
+    min-height: 20px;
+  }
+
+  .text-box .text-content {
+    outline: none;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    min-width: 4px;
+    min-height: 1em;
+    line-height: 1.3;
+    caret-color: #5a5aff;
+  }
+
+  .text-box.editing {
+    cursor: text;
+  }
+
+  .text-box.selected .text-border {
+    display: block;
+  }
+
+  .text-border {
+    display: none;
+    position: absolute;
+    inset: -4px;
+    border: 1.5px solid rgba(90, 90, 255, 0.7);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+
+  .text-box.editing .text-border {
+    display: block;
+    border-color: #5a5aff;
+  }
+
+  /* Text box resize handles */
+  .text-box .text-handle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #5a5aff;
+    border-radius: 1px;
+    z-index: 12;
+    display: none;
+  }
+
+  .text-box.selected:not(.editing) .text-handle { display: block; }
+
+  .text-box .th-l  { left: -8px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+  .text-box .th-r  { right: -8px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+  .text-box .th-t  { top: -8px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+  .text-box .th-b  { bottom: -8px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+
+  /* Text placement cursor */
+  .canvas-area.text-place-mode {
+    cursor: text;
+  }
+  .canvas-area.text-place-mode .cell {
+    pointer-events: none;
+  }
+  .canvas-area.text-place-mode .text-box {
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -456,10 +681,59 @@
     Click frame to select · <b>Ctrl+Click</b> to multi-select · <b>Drag on canvas</b> to box-select · <b>Delete</b> to remove<br/>
     Drag to pan image · Scroll selected to zoom · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
     <b>Shift+Drag</b> to move frames · <b>Shift+Scroll</b> to resize frames · <b>Ctrl+Drag</b> to duplicate<br/>
+    <b>T tool</b>: click canvas to place text · <b>Double-click</b> text to edit · <b>Scroll</b> selected text to resize<br/>
     Unlock background to drag &amp; scroll-zoom the background image
   </div>
 
   <button id="downloadBtn" class="download-btn">Download Canvas (PNG)</button>
+</div>
+
+<div class="right-sidebar" id="rightSidebar">
+  <div class="rs-section">
+    <div class="rs-section-title">Tools</div>
+    <button class="rs-tool-btn" id="textToolBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 7V4h16v3"/><path d="M12 4v16"/><path d="M8 20h8"/>
+      </svg>
+      Add Text
+    </button>
+  </div>
+
+  <div class="rs-section rs-text-format-section" id="textFormatSection">
+    <div class="rs-section-title">Text Format</div>
+
+    <div class="rs-row">
+      <select class="rs-select rs-select-font" id="rsFontFamily"></select>
+    </div>
+    <div class="rs-row">
+      <select class="rs-select rs-select-size" id="rsFontSize"></select>
+      <button class="rs-icon-btn" id="rsBold" title="Bold"><b>B</b></button>
+      <button class="rs-icon-btn" id="rsItalic" title="Italic"><i>I</i></button>
+      <button class="rs-icon-btn" id="rsUnderline" title="Underline"><u>U</u></button>
+    </div>
+    <div class="rs-row">
+      <button class="rs-icon-btn" id="rsAlignLeft" title="Align Left">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h12M3 18h16"/></svg>
+      </button>
+      <button class="rs-icon-btn" id="rsAlignCenter" title="Align Center">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M4 18h16"/></svg>
+      </button>
+      <button class="rs-icon-btn" id="rsAlignRight" title="Align Right">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M9 12h12M5 18h16"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="rs-section rs-text-format-section" id="textColorSection">
+    <div class="rs-section-title">Color</div>
+    <div class="rs-color-swatches" id="rsColorSwatches"></div>
+    <div class="rs-color-custom-row">
+      <div class="rs-color-preview" id="rsColorPreview">
+        <input type="color" id="rsColorPicker" value="#ffffff">
+      </div>
+      <input type="text" class="rs-hex-input" id="rsHexInput" value="#FFFFFF" maxlength="7" spellcheck="false">
+    </div>
+  </div>
 </div>
 
 <script>
@@ -686,6 +960,11 @@ let dupDragStartX, dupDragStartY;
 let dupStartPositions = new Map(); // srcIdx -> {x, y}
 let dupCloneToStartPos = new Map(); // cloneIdx -> {x, y}
 
+// Text box clones created during a unified ctrl+drag duplicate operation
+let dupTextBoxSources = []; // source text box ids to duplicate
+let dupTextBoxCloneIds = []; // cloned text box ids
+let dupTextBoxCloneStartPos = new Map(); // cloneId -> {x, y}
+
 // Background dragging state (when bg is unlocked)
 let bgDragging = false;
 let bgDragStartX, bgDragStartY, bgDragStartPosX, bgDragStartPosY;
@@ -795,6 +1074,9 @@ function cancelInteractions() {
   dupCloneIndices = [];
   dupStartPositions.clear();
   dupCloneToStartPos.clear();
+  dupTextBoxSources = [];
+  dupTextBoxCloneIds = [];
+  dupTextBoxCloneStartPos.clear();
   
   if (marqueeActive && marqueeEl) { marqueeEl.remove(); marqueeEl = null; }
   marqueeActive = false;
@@ -932,6 +1214,11 @@ function createCell(state, tmpl, cfg, i) {
       sources.forEach(idx => {
          dupStartPositions.set(idx, { x: cells[idx].cfg.x, y: cells[idx].cfg.y });
       });
+
+      // Also capture selected text boxes for unified duplication
+      dupTextBoxSources = [...selectedTextBoxIds];
+      dupTextBoxCloneIds = [];
+      dupTextBoxCloneStartPos.clear();
       return;
     }
 
@@ -940,8 +1227,10 @@ function createCell(state, tmpl, cfg, i) {
       selectCellFor(state, ci);
     }
 
-    // Shift+click: start frame dragging for ALL selected frames
-    if (e.shiftKey) {
+    const isMixedSelection = selectedIndices.has(ci) && selectedTextBoxIds.size > 0;
+
+    // Shift+click OR Mixed Selection: start frame dragging for ALL selected frames
+    if (e.shiftKey || isMixedSelection) {
       e.preventDefault();
       e.stopPropagation();
       frameDragging = true;
@@ -953,6 +1242,12 @@ function createCell(state, tmpl, cfg, i) {
         const s = cells[idx];
         multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
         s.el.classList.add('dragging');
+      });
+      // Also capture selected text boxes for unified frame-level drag
+      multiTextDragStartPositions = new Map();
+      selectedTextBoxIds.forEach(tbId => {
+        const t = getTextBoxById(tbId);
+        if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
       });
       return;
     }
@@ -1001,6 +1296,12 @@ function createCell(state, tmpl, cfg, i) {
           multiDragStartPositions.set(idx, { posX: s.posX, posY: s.posY });
         }
         s.el.classList.add('dragging');
+      });
+      // Also capture selected text box positions for unified drag
+      multiTextDragStartPositions = new Map();
+      selectedTextBoxIds.forEach(tbId => {
+        const t = getTextBoxById(tbId);
+        if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
       });
       e.preventDefault();
     }
@@ -1170,6 +1471,7 @@ function createTemplateState(tmpl) {
   const state = {
     cells: [],
     selectedIndices: new Set(),
+    textBoxes: [],       // Text box objects for this template
     bgImg: new Image(),
     bgLoaded: false,
     // Background transform state (like an image inside a "canvas-sized frame")
@@ -1408,9 +1710,11 @@ function performSwap(idxA, idxB) {
 }
 
 // ===================== DESELECT / MARQUEE SELECT ON CANVAS =====================
-// Clicking/dragging on the canvas background (not on a cell) starts marquee selection
+// Clicking/dragging on the canvas background (not on a cell or text box) starts marquee selection
 canvasArea.addEventListener('mousedown', (e) => {
   if (e.target.closest('.cell')) return;
+  if (e.target.closest('.text-box')) return;
+  if (textPlaceMode) return; // text placement handler handles this
   // Don't start marquee if bg is unlocked and we're about to bg-drag
   if (!lockBgToggle.checked) return;
 
@@ -1437,6 +1741,9 @@ document.addEventListener('mousedown', (e) => {
   // If clicking inside a cell, cell logic handles the event
   if (e.target.closest('.cell')) return;
   
+  // If clicking inside a text box, text box logic handles the event
+  if (e.target.closest('.text-box')) return;
+
   // If clicking canvas area, canvas logic handles deselect and marquee dragging
   if (e.target.closest('.canvas-area')) return;
 
@@ -1446,6 +1753,9 @@ document.addEventListener('mousedown', (e) => {
   // Prevent deselect when switching tabs
   if (e.target.closest('.tab-btn')) return;
 
+  // Prevent deselect when interacting with right sidebar
+  if (e.target.closest('.right-sidebar')) return;
+
   // Otherwise, click was on the outer app wrapper (sidebar background, topbar space, general hints), so deselect
   deselectAll();
 });
@@ -1453,8 +1763,9 @@ document.addEventListener('mousedown', (e) => {
 // ===================== DELETE KEY HANDLER =====================
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    // Don't intercept if user is typing in an input
+    // Don't intercept if user is typing in an input or contentEditable
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.contentEditable === 'true') return;
 
     if (selectedIndices.size === 0) return;
     const state = templateStates[activeTemplateIndex];
@@ -1509,7 +1820,7 @@ window.addEventListener('mousemove', (e) => {
     }
   }
 
-  // Multi-image-drag: apply same delta to all selected loaded frames
+  // Multi-image-drag: apply same delta to all selected loaded frames AND text boxes
   if (dragging && dragCellIdx >= 0 && !swapping && multiDragStartPositions) {
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
@@ -1520,9 +1831,24 @@ window.addEventListener('mousemove', (e) => {
       s.posY = start.posY + dy;
       applyTransform(idx);
     });
+    // Also move selected text boxes
+    if (multiTextDragStartPositions) {
+      multiTextDragStartPositions.forEach((start, tbId) => {
+        const tb = getTextBoxById(tbId);
+        if (!tb) return;
+        let newX = start.x + dx;
+        let newY = start.y + dy;
+        newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
+        newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
+        tb.x = newX;
+        tb.y = newY;
+        tb.el.style.left = newX + 'px';
+        tb.el.style.top = newY + 'px';
+      });
+    }
   }
 
-  // Multi-frame-drag (Shift+drag): reposition all selected frames
+  // Multi-frame-drag (Shift+drag): reposition all selected frames AND text boxes
   if (frameDragging && frameDragIdx >= 0 && multiFrameDragStartPositions) {
     const dx = e.clientX - frameDragStartX;
     const dy = e.clientY - frameDragStartY;
@@ -1539,17 +1865,33 @@ window.addEventListener('mousemove', (e) => {
       s.el.style.left = cfg.x + 'px';
       s.el.style.top = cfg.y + 'px';
     });
+    // Also move selected text boxes
+    if (multiTextDragStartPositions) {
+      multiTextDragStartPositions.forEach((start, tbId) => {
+        const tb = getTextBoxById(tbId);
+        if (!tb) return;
+        let newX = start.x + dx;
+        let newY = start.y + dy;
+        newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
+        newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
+        tb.x = newX;
+        tb.y = newY;
+        tb.el.style.left = newX + 'px';
+        tb.el.style.top = newY + 'px';
+      });
+    }
   }
 
   // Duplicate-drag (Ctrl+drag): create clones on first move, then reposition them
-  if (duplicating && dupSourceIdx >= 0) {
+  if (duplicating) {
     const dx = e.clientX - dupDragStartX;
     const dy = e.clientY - dupDragStartY;
 
     // Create clones lazily on first meaningful move (>3px)
-    if (dupCloneIndices.length === 0 && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+    if (dupCloneIndices.length === 0 && dupTextBoxCloneIds.length === 0 && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
       dupCloneToStartPos.clear();
       
+      // Clone selected frames
       dupStartPositions.forEach((pos, srcIdx) => {
          const cloneIdx = duplicateCell(srcIdx, pos.x, pos.y);
          if (cloneIdx >= 0) {
@@ -1558,18 +1900,33 @@ window.addEventListener('mousemove', (e) => {
             cells[srcIdx].el.style.opacity = '0.4'; // Dim source indicator
          }
       });
+
+      // Clone selected text boxes
+      dupTextBoxCloneStartPos.clear();
+      dupTextBoxSources.forEach(srcId => {
+        const src = getTextBoxById(srcId);
+        if (!src) return;
+        const clone = cloneTextBox(src);
+        dupTextBoxCloneIds.push(clone.id);
+        dupTextBoxCloneStartPos.set(clone.id, { x: src.x, y: src.y });
+        src.el.style.opacity = '0.4'; // Dim source
+      });
       
-      // Select the clones
+      // Select all clones (frames + text boxes)
       deselectAll();
       const state = templateStates[activeTemplateIndex];
       dupCloneIndices.forEach(cloneIdx => {
          state.selectedIndices.add(cloneIdx);
          cells[cloneIdx].el.classList.add('selected', 'dragging');
       });
+      selectedIndices = state.selectedIndices;
+      dupTextBoxCloneIds.forEach(cloneId => {
+        selectTextBox(cloneId);
+      });
       updateLabel();
     }
 
-    // Move the clones
+    // Move the frame clones
     if (dupCloneIndices.length > 0) {
       dupCloneIndices.forEach(cloneIdx => {
          const s = cells[cloneIdx];
@@ -1584,6 +1941,23 @@ window.addEventListener('mousemove', (e) => {
          cfg.y = newY;
          s.el.style.left = cfg.x + 'px';
          s.el.style.top = cfg.y + 'px';
+      });
+    }
+
+    // Move the text box clones
+    if (dupTextBoxCloneIds.length > 0) {
+      dupTextBoxCloneIds.forEach(cloneId => {
+        const tb = getTextBoxById(cloneId);
+        if (!tb) return;
+        const startPos = dupTextBoxCloneStartPos.get(cloneId);
+        let newX = startPos.x + dx;
+        let newY = startPos.y + dy;
+        newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
+        newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
+        tb.x = newX;
+        tb.y = newY;
+        tb.el.style.left = newX + 'px';
+        tb.el.style.top = newY + 'px';
       });
     }
   }
@@ -1665,7 +2039,7 @@ window.addEventListener('mouseup', (e) => {
 
   // Finalize duplicate-drag OR ctrl+click multi-select
   if (duplicating) {
-    if (dupCloneIndices.length > 0) {
+    if (dupCloneIndices.length > 0 || dupTextBoxCloneIds.length > 0) {
       // Clones were created (drag happened) — clean up temporary states
       dupStartPositions.forEach((_, srcIdx) => {
          if (cells[srcIdx]) {
@@ -1677,6 +2051,11 @@ window.addEventListener('mouseup', (e) => {
          if (cells[cloneIdx]) {
             cells[cloneIdx].el.classList.remove('dragging');
          }
+      });
+      // Clean up text box source dimming
+      dupTextBoxSources.forEach(srcId => {
+        const src = getTextBoxById(srcId);
+        if (src) src.el.style.opacity = '';
       });
     } else {
       // No clone was created — this was a ctrl+click (no drag).
@@ -1700,6 +2079,9 @@ window.addEventListener('mouseup', (e) => {
     dupCloneIndices = [];
     dupStartPositions.clear();
     dupCloneToStartPos.clear();
+    dupTextBoxSources = [];
+    dupTextBoxCloneIds = [];
+    dupTextBoxCloneStartPos.clear();
   }
 
   if (bgDragging) canvasArea.classList.remove('bg-dragging');
@@ -1731,12 +2113,38 @@ window.addEventListener('mouseup', (e) => {
           hitIndices.push(idx);
         }
       });
-      if (hitIndices.length > 0) {
-        selectMultiple(state, hitIndices);
+
+      // Also select text boxes within the marquee
+      const hitTextBoxes = [];
+      if (state.textBoxes) {
+        state.textBoxes.forEach(tb => {
+          const tbW = tb.width || tb.contentEl.offsetWidth;
+          const tbH = tb.contentEl.offsetHeight;
+          if (tb.x >= mLeft && tb.y >= mTop &&
+              tb.x + tbW <= mRight && tb.y + tbH <= mBottom) {
+            hitTextBoxes.push(tb.id);
+          }
+        });
+      }
+
+      if (hitIndices.length > 0 || hitTextBoxes.length > 0) {
+        if (hitIndices.length > 0) selectMultiple(state, hitIndices);
+        hitTextBoxes.forEach(id => selectTextBox(id));
       } else {
         deselectAll();
       }
     }
+  }
+
+  if (textBoxDragging) {
+    textBoxDragging = false;
+    textBoxDragId = null;
+    multiTextDragStartPositions = null;
+    multiFrameDragStartPositions = null; 
+  }
+  if (textBoxResizing) {
+    textBoxResizing = false;
+    textBoxResizeId = null;
   }
 });
 
@@ -1843,8 +2251,9 @@ lockBgToggle.addEventListener('change', () => {
 // Canvas-level mousedown for background panning (only when unlocked)
 canvasArea.addEventListener('mousedown', (e) => {
   if (lockBgToggle.checked) return;
-  // Only start bg drag if clicking directly on canvasArea or the bg image, not on a cell
+  // Only start bg drag if clicking directly on canvasArea or the bg image, not on a cell or text box
   if (e.target.closest('.cell')) return;
+  if (e.target.closest('.text-box')) return;
 
   deselectAll();
 
@@ -1863,8 +2272,9 @@ canvasArea.addEventListener('mousedown', (e) => {
 // Canvas-level wheel for background zooming (only when unlocked)
 canvasArea.addEventListener('wheel', (e) => {
   if (lockBgToggle.checked) return;
-  // Only zoom bg if scrolling on canvas itself, not on a cell
+  // Only zoom bg if scrolling on canvas itself, not on a cell or text box
   if (e.target.closest('.cell')) return;
+  if (e.target.closest('.text-box')) return;
 
   const state = templateStates[activeTemplateIndex];
   if (!state.bgLoaded) return;
@@ -1899,16 +2309,12 @@ function getBgDrawParams() {
 function generateCanvasBlob(includeBackground) {
   return new Promise((resolve, reject) => {
     try {
-      // Compute a scale factor that preserves the original resolution of uploaded images.
-      // For each loaded cell, the image is drawn at s.scale in canvas coordinates.
-      // To render at native resolution, we need exportScale >= 1/s.scale for every cell.
       let exportScale = 1;
       cells.forEach((s) => {
         if (s.loaded && s.scale > 0) {
           exportScale = Math.max(exportScale, 1 / s.scale);
         }
       });
-      // Cap to avoid extremely large canvases (max 8192px on either dimension)
       const maxDim = Math.max(CANVAS_W, CANVAS_H);
       exportScale = Math.min(exportScale, 8192 / maxDim);
 
@@ -1956,6 +2362,14 @@ function generateCanvasBlob(includeBackground) {
         ctx.restore();
       });
 
+      // ---- Draw text boxes on top ----
+      const state = templateStates[activeTemplateIndex];
+      if (state.textBoxes) {
+        state.textBoxes.forEach(tb => {
+          drawTextBoxToCanvas(ctx, tb);
+        });
+      }
+
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
         else reject(new Error('Blob generation failed.'));
@@ -1965,6 +2379,986 @@ function generateCanvasBlob(includeBackground) {
     }
   });
 }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                                                                        ║
+// ║   TEXT BOX SYSTEM                                                      ║
+// ║                                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+// ===================== FONT REGISTRY =====================
+// To add a new font: 1) Add it to the Google Fonts @import in <style>
+//                    2) Push { name, family } into this array. That's it.
+const TEXT_FONTS = [
+  { name: 'DM Sans',             family: "'DM Sans', sans-serif" },
+  { name: 'Playfair Display',    family: "'Playfair Display', serif" },
+  { name: 'Montserrat',          family: "'Montserrat', sans-serif" },
+  { name: 'Lora',                family: "'Lora', serif" },
+  { name: 'Oswald',              family: "'Oswald', sans-serif" },
+  { name: 'Raleway',             family: "'Raleway', sans-serif" },
+  { name: 'Merriweather',        family: "'Merriweather', serif" },
+  { name: 'Poppins',             family: "'Poppins', sans-serif" },
+  { name: 'Bebas Neue',          family: "'Bebas Neue', sans-serif" },
+  { name: 'Abril Fatface',       family: "'Abril Fatface', serif" },
+  { name: 'Cormorant Garamond',  family: "'Cormorant Garamond', serif" },
+  { name: 'Roboto Slab',         family: "'Roboto Slab', serif" },
+  { name: 'Dancing Script',      family: "'Dancing Script', cursive" },
+  { name: 'Bitter',              family: "'Bitter', serif" },
+  { name: 'Nunito',              family: "'Nunito', sans-serif" },
+  { name: 'Crimson Text',        family: "'Crimson Text', serif" },
+  { name: 'Archivo Black',       family: "'Archivo Black', sans-serif" },
+  { name: 'Source Serif 4',      family: "'Source Serif 4', serif" },
+];
+
+const TEXT_FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96, 128];
+
+// ===================== COLOR PALETTE =====================
+// To change the default color theme: replace this array.
+// Each entry is a hex string. The UI renders them as a swatch grid.
+const DEFAULT_COLOR_PALETTE = [
+  // Row 1: grayscale
+  '#000000', '#333333', '#666666', '#999999', '#cccccc', '#ffffff',
+  // Row 2: warm
+  '#ff0000', '#ff4d4d', '#ff69b4', '#dda0dd', '#9370db', '#4b0082',
+  // Row 3: cool
+  '#008b8b', '#20b2aa', '#00bfff', '#1e90ff', '#00008b', '#000080',
+  // Row 4: nature
+  '#00c853', '#76ff03', '#ffd600', '#ffab40', '#ff6d00', '#ff3d00',
+  // Row 5: pastels
+  '#ffcdd2', '#f8bbd0', '#e1bee7', '#c5cae9', '#b2dfdb', '#c8e6c9',
+];
+
+// ===================== TEXT BOX STATE =====================
+// Each text box: { id, x, y, width, text, fontFamily, fontSize, fontColor,
+//                  bold, italic, underline, align, el, contentEl }
+// width: null = auto-expand; number = fixed width (after user resizes)
+
+let textPlaceMode = false;       // T tool active
+let activeTextBoxId = null;      // currently-editing text box id
+let textBoxDragging = false;
+let textBoxDragId = null;
+let textBoxDragStartX = 0, textBoxDragStartY = 0;
+let textBoxDragStartPosX = 0, textBoxDragStartPosY = 0;
+let textBoxResizing = false;
+let textBoxResizeId = null;
+let textBoxResizeSide = '';
+let textBoxResizeStartX = 0;
+let textBoxResizeStartW = 0;
+let textBoxResizeStartXPos = 0;
+
+// Deferred ctrl+click state: pending until we know if it's a click (toggle-select) or drag (duplicate)
+let textBoxDupPending = false;
+let textBoxDupSourceId = null;
+let textBoxDupDragStartX = 0;
+let textBoxDupDragStartY = 0;
+let textBoxDupCloneId = null;
+
+// Multi-drag for text boxes when part of selection
+let multiTextDragStartPositions = null; // Map of tbId -> {x, y}
+
+let nextTextBoxId = 1;
+
+function getTextBoxes() {
+  const state = templateStates[activeTemplateIndex];
+  if (!state) return [];
+  if (!state.textBoxes) state.textBoxes = [];
+  return state.textBoxes;
+}
+
+function getTextBoxById(id) {
+  return getTextBoxes().find(tb => tb.id === id) || null;
+}
+
+// ===================== TEXT BOX CREATION =====================
+function createTextBox(x, y) {
+  const state = templateStates[activeTemplateIndex];
+  if (!state.textBoxes) state.textBoxes = [];
+
+  const id = 'tb_' + nextTextBoxId++;
+  const tb = {
+    id,
+    x,
+    y,
+    width: null,  // auto-expand initially
+    text: '',
+    fontFamily: TEXT_FONTS[0].family,
+    fontName: TEXT_FONTS[0].name,
+    fontSize: 24,
+    fontColor: '#ffffff',
+    bold: false,
+    italic: false,
+    underline: false,
+    align: 'left',
+    el: null,
+    contentEl: null,
+  };
+
+  // Build DOM
+  const el = document.createElement('div');
+  el.className = 'text-box editing';
+  el.dataset.tbid = id;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+
+  const border = document.createElement('div');
+  border.className = 'text-border';
+  el.appendChild(border);
+
+  const content = document.createElement('div');
+  content.className = 'text-content';
+  content.contentEditable = 'true';
+  content.spellcheck = false;
+  content.style.fontFamily = tb.fontFamily;
+  content.style.fontSize = tb.fontSize + 'px';
+  content.style.color = tb.fontColor;
+  content.style.textAlign = tb.align;
+  el.appendChild(content);
+
+  // Resize handles
+  ['l', 'r', 't', 'b'].forEach(side => {
+    const h = document.createElement('div');
+    h.className = `text-handle th-${side}`;
+    h.dataset.thside = side;
+    el.appendChild(h);
+  });
+
+  tb.el = el;
+  tb.contentEl = content;
+  state.textBoxes.push(tb);
+
+  canvasArea.appendChild(el);
+
+  // Attach all interaction event handlers
+  attachTextBoxEvents(tb);
+
+  // Focus it for immediate editing
+  activeTextBoxId = id;
+  content.focus();
+
+  syncFormatUIToSelection();
+  return tb;
+}
+
+// Attach all interaction events to a text box (used by both createTextBox and cloneTextBox)
+function attachTextBoxEvents(tb) {
+  const el = tb.el;
+  const content = tb.contentEl;
+  const id = tb.id;
+
+  // Event: prevent mousedown on content from propagating when editing
+  content.addEventListener('mousedown', (e) => {
+    if (el.classList.contains('editing')) {
+      e.stopPropagation();
+    }
+  });
+
+  // Event: input — sync text back to state
+  content.addEventListener('input', () => {
+    tb.text = content.innerHTML;
+  });
+
+  // Event: blur — finalize text box
+  content.addEventListener('blur', () => {
+    // Delay so we can check if focus went to a sibling UI element
+    setTimeout(() => {
+      if (document.activeElement && document.activeElement.closest('.right-sidebar')) {
+        // User clicked a format control — don't finalize, but clear browser selection highlight
+        // so the blue highlight doesn't linger visually on the text
+        return;
+      }
+      finalizeTextBox(id);
+    }, 100);
+  });
+
+  // Event: mousedown on the text-box wrapper (for dragging, selecting, resize handles)
+  el.addEventListener('mousedown', (e) => {
+    if (el.classList.contains('editing')) return; // let content handle it
+
+    const handleEl = e.target.closest('.text-handle');
+    if (handleEl) {
+      // Start resize
+      e.preventDefault();
+      e.stopPropagation();
+      textBoxResizing = true;
+      textBoxResizeId = id;
+      textBoxResizeSide = handleEl.dataset.thside;
+      textBoxResizeStartX = e.clientX;
+      textBoxResizeStartW = tb.width || tb.contentEl.offsetWidth;
+      textBoxResizeStartXPos = tb.x;
+      return;
+    }
+
+    // Ctrl+click: enter pending state — duplicate on drag, toggle-select on click
+    // (mirrors the frame duplicate/multi-select pattern)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      textBoxDupPending = true;
+      textBoxDupSourceId = id;
+      textBoxDupDragStartX = e.clientX;
+      textBoxDupDragStartY = e.clientY;
+      textBoxDupCloneId = null;
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Select this text box (single-select if not already selected)
+    if (!selectedTextBoxIds.has(id)) {
+      deselectAll();
+      selectTextBox(id);
+    }
+
+    // Start drag
+    textBoxDragging = true;
+    textBoxDragId = id;
+    textBoxDragStartX = e.clientX;
+    textBoxDragStartY = e.clientY;
+    textBoxDragStartPosX = tb.x;
+    textBoxDragStartPosY = tb.y;
+
+    // Multi-drag: store start positions for all selected text boxes
+    multiTextDragStartPositions = new Map();
+    selectedTextBoxIds.forEach(tbId => {
+      const t = getTextBoxById(tbId);
+      if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
+    });
+    // Also capture selected frames for unified drag
+    multiFrameDragStartPositions = new Map();
+    selectedIndices.forEach(idx => {
+      const s = cells[idx];
+      if (s) { // No longer requiring s.loaded, empty frames can move too
+        multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
+      }
+    });
+  });
+
+  // Double-click to re-enter editing
+  el.addEventListener('dblclick', (e) => {
+    if (el.classList.contains('editing')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    enterTextEditing(id);
+  });
+
+  // Scroll to resize font (when selected but not editing)
+  el.addEventListener('wheel', (e) => {
+    if (el.classList.contains('editing')) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const delta = e.deltaY > 0 ? -1 : 1;
+
+    // Apply to all selected text boxes
+    selectedTextBoxIds.forEach(tbId => {
+      const t = getTextBoxById(tbId);
+      if (!t) return;
+      t.fontSize = Math.max(6, Math.min(200, t.fontSize + delta));
+      t.contentEl.style.fontSize = t.fontSize + 'px';
+    });
+    syncFormatUIToSelection();
+  }, { passive: false });
+}
+
+// ===================== TEXT BOX SELECTION =====================
+let selectedTextBoxIds = new Set();
+
+function selectTextBox(id) {
+  selectedTextBoxIds.add(id);
+  const tb = getTextBoxById(id);
+  if (tb) tb.el.classList.add('selected');
+  syncFormatUIToSelection();
+}
+
+function deselectTextBox(id) {
+  selectedTextBoxIds.delete(id);
+  const tb = getTextBoxById(id);
+  if (tb) tb.el.classList.remove('selected');
+  syncFormatUIToSelection();
+}
+
+function deselectAllTextBoxes() {
+  selectedTextBoxIds.forEach(id => {
+    const tb = getTextBoxById(id);
+    if (tb) {
+      tb.el.classList.remove('selected');
+      tb.el.classList.remove('editing');
+      tb.contentEl.contentEditable = 'false';
+    }
+  });
+  selectedTextBoxIds.clear();
+  activeTextBoxId = null;
+}
+
+// Augment deselectAll to also clear text box selection
+const _origDeselectAll = deselectAll;
+deselectAll = function() {
+  _origDeselectAll();
+  deselectAllTextBoxes();
+};
+
+function enterTextEditing(id) {
+  const tb = getTextBoxById(id);
+  if (!tb) return;
+  activeTextBoxId = id;
+  tb.el.classList.add('editing');
+  tb.contentEl.contentEditable = 'true';
+  tb.contentEl.focus();
+  // Place cursor at end
+  const sel = window.getSelection();
+  sel.selectAllChildren(tb.contentEl);
+  sel.collapseToEnd();
+}
+
+function finalizeTextBox(id) {
+  const tb = getTextBoxById(id);
+  if (!tb) return;
+
+  tb.text = tb.contentEl.innerHTML;
+  tb.contentEl.contentEditable = 'false';
+  tb.el.classList.remove('editing');
+
+  // Clear any lingering browser text selection (blue highlight)
+  const sel = window.getSelection();
+  if (sel) sel.removeAllRanges();
+
+  // If empty, remove the text box
+  const plainText = tb.contentEl.textContent.trim();
+  if (plainText === '') {
+    removeTextBox(id);
+    deselectAll();
+    exitTextPlaceMode();
+    return;
+  }
+
+  // If it was in auto-expand mode, fix the width now
+  if (tb.width === null) {
+    tb.width = tb.contentEl.offsetWidth + 2;
+    tb.contentEl.style.width = tb.width + 'px';
+  }
+
+  if (activeTextBoxId === id) activeTextBoxId = null;
+
+  // Clean deselect everything on click-out / finalize
+  deselectAll();
+
+  // Exit text place mode
+  exitTextPlaceMode();
+}
+
+function removeTextBox(id) {
+  const state = templateStates[activeTemplateIndex];
+  const idx = state.textBoxes.findIndex(tb => tb.id === id);
+  if (idx >= 0) {
+    state.textBoxes[idx].el.remove();
+    state.textBoxes.splice(idx, 1);
+  }
+  selectedTextBoxIds.delete(id);
+  if (activeTextBoxId === id) activeTextBoxId = null;
+}
+
+// Clone a text box: creates a copy and returns it (does NOT set up drag state or selection)
+function cloneTextBox(src) {
+  const state = templateStates[activeTemplateIndex];
+  if (!state.textBoxes) state.textBoxes = [];
+
+  const id = 'tb_' + nextTextBoxId++;
+  const tb = {
+    id,
+    x: src.x,
+    y: src.y,
+    width: src.width,
+    text: src.text,
+    fontFamily: src.fontFamily,
+    fontName: src.fontName,
+    fontSize: src.fontSize,
+    fontColor: src.fontColor,
+    bold: src.bold,
+    italic: src.italic,
+    underline: src.underline,
+    align: src.align,
+    el: null,
+    contentEl: null,
+  };
+
+  // Build DOM (reuse the same structure as createTextBox but skip editing mode)
+  const el = document.createElement('div');
+  el.className = 'text-box';
+  el.dataset.tbid = id;
+  el.style.left = tb.x + 'px';
+  el.style.top = tb.y + 'px';
+
+  const border = document.createElement('div');
+  border.className = 'text-border';
+  el.appendChild(border);
+
+  const content = document.createElement('div');
+  content.className = 'text-content';
+  content.contentEditable = 'false';
+  content.spellcheck = false;
+  content.innerHTML = tb.text;
+  content.style.fontFamily = tb.fontFamily;
+  content.style.fontSize = tb.fontSize + 'px';
+  content.style.color = tb.fontColor;
+  content.style.fontWeight = tb.bold ? 'bold' : 'normal';
+  content.style.fontStyle = tb.italic ? 'italic' : 'normal';
+  content.style.textDecoration = tb.underline ? 'underline' : 'none';
+  content.style.textAlign = tb.align;
+  if (tb.width) content.style.width = tb.width + 'px';
+  el.appendChild(content);
+
+  ['l', 'r', 't', 'b'].forEach(side => {
+    const h = document.createElement('div');
+    h.className = `text-handle th-${side}`;
+    h.dataset.thside = side;
+    el.appendChild(h);
+  });
+
+  tb.el = el;
+  tb.contentEl = content;
+  state.textBoxes.push(tb);
+  canvasArea.appendChild(el);
+
+  // Attach the same event handlers as createTextBox
+  attachTextBoxEvents(tb);
+
+  return tb;
+}
+
+function duplicateTextBox(id, e) {
+  const src = getTextBoxById(id);
+  if (!src) return;
+
+  // Determine all sources: if the clicked text box is selected, dup all selected;
+  // otherwise just dup this one
+  const tbSources = selectedTextBoxIds.has(id) ? [...selectedTextBoxIds] : [id];
+  // Also duplicate any selected frames
+  const frameSources = new Map();
+  selectedIndices.forEach(idx => {
+    frameSources.set(idx, { x: cells[idx].cfg.x, y: cells[idx].cfg.y });
+  });
+
+  deselectAll();
+
+  const state = templateStates[activeTemplateIndex];
+  const allClonedTextBoxIds = [];
+  const cloneTextStartPositions = new Map();
+
+  // Clone text boxes
+  tbSources.forEach(srcId => {
+    const s = getTextBoxById(srcId);
+    if (!s) return;
+    const clone = cloneTextBox(s);
+    allClonedTextBoxIds.push(clone.id);
+    cloneTextStartPositions.set(clone.id, { x: s.x, y: s.y });
+    s.el.style.opacity = '0.4';
+  });
+
+  // Clone frames
+  const allClonedFrameIndices = [];
+  const cloneFrameStartPositions = new Map();
+  frameSources.forEach((pos, srcIdx) => {
+    const cloneIdx = duplicateCell(srcIdx, pos.x, pos.y);
+    if (cloneIdx >= 0) {
+      allClonedFrameIndices.push(cloneIdx);
+      cloneFrameStartPositions.set(cloneIdx, pos);
+      cells[srcIdx].el.style.opacity = '0.4';
+    }
+  });
+
+  // Select all clones
+  allClonedFrameIndices.forEach(cloneIdx => {
+    state.selectedIndices.add(cloneIdx);
+    cells[cloneIdx].el.classList.add('selected', 'dragging');
+  });
+  selectedIndices = state.selectedIndices;
+  allClonedTextBoxIds.forEach(cloneId => selectTextBox(cloneId));
+  updateLabel();
+
+  // Set up unified drag tracking using the frame dup system
+  duplicating = true;
+  dupSourceIdx = -1; // not from a single frame
+  dupDragStartX = e.clientX;
+  dupDragStartY = e.clientY;
+  dupCloneIndices = allClonedFrameIndices;
+  dupCloneToStartPos = cloneFrameStartPositions;
+  dupStartPositions = frameSources;
+  dupTextBoxSources = tbSources;
+  dupTextBoxCloneIds = allClonedTextBoxIds;
+  dupTextBoxCloneStartPos = cloneTextStartPositions;
+}
+
+// ===================== TEXT PLACE MODE =====================
+function enterTextPlaceMode() {
+  textPlaceMode = true;
+  canvasArea.classList.add('text-place-mode');
+  document.getElementById('textToolBtn').classList.add('active');
+}
+
+function exitTextPlaceMode() {
+  textPlaceMode = false;
+  canvasArea.classList.remove('text-place-mode');
+  document.getElementById('textToolBtn').classList.remove('active');
+}
+
+// Canvas click handler for text placement (runs before the marquee handler)
+canvasArea.addEventListener('mousedown', (e) => {
+  if (!textPlaceMode) return;
+  if (e.target.closest('.text-box')) return;
+
+  // If there's an active text box being edited, finalize it and exit text mode
+  // instead of creating a new one — the user is clicking out to finish.
+  if (activeTextBoxId) {
+    e.preventDefault();
+    e.stopPropagation();
+    finalizeTextBox(activeTextBoxId);
+    return;
+  }
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const rect = canvasArea.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  deselectAll();
+  createTextBox(x, y);
+}, true); // capture phase so it fires before other canvas handlers
+
+// ===================== TEXT TOOL BUTTON =====================
+document.getElementById('textToolBtn').addEventListener('click', () => {
+  if (textPlaceMode) {
+    exitTextPlaceMode();
+  } else {
+    enterTextPlaceMode();
+  }
+});
+
+// Escape exits text editing and deselects everything
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (activeTextBoxId) {
+      finalizeTextBox(activeTextBoxId);
+      // finalizeTextBox already calls deselectAll and exitTextPlaceMode
+      return;
+    }
+    if (textPlaceMode) {
+      exitTextPlaceMode();
+    }
+    // Always deselect everything on Escape
+    deselectAll();
+  }
+});
+
+// ===================== TEXT FORMAT SYNC =====================
+// Syncs the right sidebar UI to reflect the currently selected text box(es)
+function syncFormatUIToSelection() {
+  const section = document.getElementById('textFormatSection');
+  const colorSection = document.getElementById('textColorSection');
+
+  if (selectedTextBoxIds.size === 0) {
+    section.classList.add('rs-disabled');
+    colorSection.classList.add('rs-disabled');
+    return;
+  }
+  section.classList.remove('rs-disabled');
+  colorSection.classList.remove('rs-disabled');
+
+  // Use the first selected text box as reference
+  const firstId = [...selectedTextBoxIds][0];
+  const tb = getTextBoxById(firstId);
+  if (!tb) return;
+
+  document.getElementById('rsFontFamily').value = tb.fontName;
+  document.getElementById('rsFontSize').value = tb.fontSize;
+  document.getElementById('rsBold').classList.toggle('active', tb.bold);
+  document.getElementById('rsItalic').classList.toggle('active', tb.italic);
+  document.getElementById('rsUnderline').classList.toggle('active', tb.underline);
+  document.getElementById('rsAlignLeft').classList.toggle('active', tb.align === 'left');
+  document.getElementById('rsAlignCenter').classList.toggle('active', tb.align === 'center');
+  document.getElementById('rsAlignRight').classList.toggle('active', tb.align === 'right');
+
+  // Color
+  updateColorUI(tb.fontColor);
+}
+
+function updateColorUI(color) {
+  const hex = color.toUpperCase();
+  document.getElementById('rsColorPicker').value = color;
+  document.getElementById('rsHexInput').value = hex;
+  document.getElementById('rsColorPreview').style.background = color;
+
+  // Update swatch active state
+  document.querySelectorAll('.rs-swatch').forEach(sw => {
+    sw.classList.toggle('active', sw.dataset.color.toUpperCase() === hex);
+  });
+}
+
+// Apply a formatting change to all selected text boxes
+function applyToSelectedTextBoxes(fn) {
+  selectedTextBoxIds.forEach(id => {
+    const tb = getTextBoxById(id);
+    if (tb) fn(tb);
+  });
+  syncFormatUIToSelection();
+}
+
+// ===================== RIGHT SIDEBAR WIRING =====================
+// Populate font dropdown
+const fontSelect = document.getElementById('rsFontFamily');
+TEXT_FONTS.forEach(f => {
+  const opt = document.createElement('option');
+  opt.value = f.name;
+  opt.textContent = f.name;
+  opt.style.fontFamily = f.family;
+  fontSelect.appendChild(opt);
+});
+
+fontSelect.addEventListener('change', () => {
+  const font = TEXT_FONTS.find(f => f.name === fontSelect.value);
+  if (!font) return;
+  applyToSelectedTextBoxes(tb => {
+    tb.fontFamily = font.family;
+    tb.fontName = font.name;
+    tb.contentEl.style.fontFamily = font.family;
+  });
+});
+
+// Populate font size dropdown
+const sizeSelect = document.getElementById('rsFontSize');
+TEXT_FONT_SIZES.forEach(s => {
+  const opt = document.createElement('option');
+  opt.value = s;
+  opt.textContent = s;
+  sizeSelect.appendChild(opt);
+});
+sizeSelect.value = 24;
+
+sizeSelect.addEventListener('change', () => {
+  const sz = parseInt(sizeSelect.value);
+  applyToSelectedTextBoxes(tb => {
+    tb.fontSize = sz;
+    tb.contentEl.style.fontSize = sz + 'px';
+  });
+});
+
+// Bold / Italic / Underline
+document.getElementById('rsBold').addEventListener('click', () => {
+  applyToSelectedTextBoxes(tb => {
+    tb.bold = !tb.bold;
+    tb.contentEl.style.fontWeight = tb.bold ? 'bold' : 'normal';
+  });
+});
+document.getElementById('rsItalic').addEventListener('click', () => {
+  applyToSelectedTextBoxes(tb => {
+    tb.italic = !tb.italic;
+    tb.contentEl.style.fontStyle = tb.italic ? 'italic' : 'normal';
+  });
+});
+document.getElementById('rsUnderline').addEventListener('click', () => {
+  applyToSelectedTextBoxes(tb => {
+    tb.underline = !tb.underline;
+    tb.contentEl.style.textDecoration = tb.underline ? 'underline' : 'none';
+  });
+});
+
+// Alignment
+['Left', 'Center', 'Right'].forEach(a => {
+  document.getElementById('rsAlign' + a).addEventListener('click', () => {
+    const val = a.toLowerCase();
+    applyToSelectedTextBoxes(tb => {
+      tb.align = val;
+      tb.contentEl.style.textAlign = val;
+    });
+  });
+});
+
+// Color swatches
+const swatchContainer = document.getElementById('rsColorSwatches');
+DEFAULT_COLOR_PALETTE.forEach(color => {
+  const sw = document.createElement('div');
+  sw.className = 'rs-swatch' + (color === '#ffffff' ? ' rs-swatch-white' : '');
+  sw.style.background = color;
+  sw.dataset.color = color;
+  sw.addEventListener('click', () => {
+    applyToSelectedTextBoxes(tb => {
+      tb.fontColor = color;
+      tb.contentEl.style.color = color;
+    });
+    updateColorUI(color);
+  });
+  swatchContainer.appendChild(sw);
+});
+
+// Custom color picker
+document.getElementById('rsColorPicker').addEventListener('input', (e) => {
+  const color = e.target.value;
+  applyToSelectedTextBoxes(tb => {
+    tb.fontColor = color;
+    tb.contentEl.style.color = color;
+  });
+  updateColorUI(color);
+});
+
+// Hex input
+document.getElementById('rsHexInput').addEventListener('change', (e) => {
+  let val = e.target.value.trim();
+  if (!val.startsWith('#')) val = '#' + val;
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+    applyToSelectedTextBoxes(tb => {
+      tb.fontColor = val;
+      tb.contentEl.style.color = val;
+    });
+    updateColorUI(val);
+  }
+});
+
+// ===================== TEXT BOX DRAG/RESIZE IN GLOBAL HANDLERS =====================
+
+window.addEventListener('mousemove', (e) => {
+  // Deferred ctrl+drag: create clone on first meaningful move
+  if (textBoxDupPending && textBoxDupSourceId) {
+    const dx = e.clientX - textBoxDupDragStartX;
+    const dy = e.clientY - textBoxDupDragStartY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      // Drag detected — duplicate all selected objects now
+      textBoxDupPending = false;
+      duplicateTextBox(textBoxDupSourceId, e);
+      // duplicateTextBox sets up the unified 'duplicating' state,
+      // so the frame dup handler in the main mousemove takes over for all clones
+    }
+  }
+
+  // Text box dragging — also moves selected frames
+  if (textBoxDragging && textBoxDragId && multiTextDragStartPositions) {
+    const dx = e.clientX - textBoxDragStartX;
+    const dy = e.clientY - textBoxDragStartY;
+    multiTextDragStartPositions.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      let newX = start.x + dx;
+      let newY = start.y + dy;
+      newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
+      newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
+      tb.x = newX;
+      tb.y = newY;
+      tb.el.style.left = newX + 'px';
+      tb.el.style.top = newY + 'px';
+    });
+    // Also move selected frames
+    if (multiFrameDragStartPositions) {
+      multiFrameDragStartPositions.forEach((start, idx) => {
+        const s = cells[idx];
+        if (!s) return;
+        const cfg = s.cfg;
+        let newX = start.x + dx;
+        let newY = start.y + dy;
+        newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
+        newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
+        cfg.x = newX;
+        cfg.y = newY;
+        s.el.style.left = cfg.x + 'px';
+        s.el.style.top = cfg.y + 'px';
+      });
+    }
+  }
+
+  // Text box resizing
+  if (textBoxResizing && textBoxResizeId) {
+    const tb = getTextBoxById(textBoxResizeId);
+    if (!tb) return;
+    const dx = e.clientX - textBoxResizeStartX;
+
+    if (textBoxResizeSide === 'r') {
+      const newW = Math.max(20, textBoxResizeStartW + dx);
+      tb.width = newW;
+      tb.contentEl.style.width = newW + 'px';
+    } else if (textBoxResizeSide === 'l') {
+      const newW = Math.max(20, textBoxResizeStartW - dx);
+      tb.width = newW;
+      tb.contentEl.style.width = newW + 'px';
+      tb.x = textBoxResizeStartXPos + dx;
+      tb.el.style.left = tb.x + 'px';
+    }
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  // Deferred ctrl+click: no drag happened — toggle multi-select
+  if (textBoxDupPending && textBoxDupSourceId) {
+    const id = textBoxDupSourceId;
+    if (selectedTextBoxIds.has(id)) {
+      deselectTextBox(id);
+    } else {
+      selectTextBox(id);
+    }
+    textBoxDupPending = false;
+    textBoxDupSourceId = null;
+    textBoxDupCloneId = null;
+  }
+
+  if (textBoxDragging) {
+    textBoxDragging = false;
+    textBoxDragId = null;
+    multiTextDragStartPositions = null;
+    multiFrameDragStartPositions = null; 
+  }
+  if (textBoxResizing) {
+    textBoxResizing = false;
+    textBoxResizeId = null;
+  }
+});
+
+// ===================== DELETE KEY FOR TEXT BOXES =====================
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.contentEditable === 'true') return; // don't intercept when typing
+
+    if (selectedTextBoxIds.size > 0) {
+      [...selectedTextBoxIds].forEach(id => removeTextBox(id));
+      // Don't prevent default if frame deletion should also happen;
+      // frame delete handler checks selectedIndices separately
+    }
+  }
+});
+
+// ===================== MARQUEE SELECT: INCLUDE TEXT BOXES =====================
+// Augment the marquee finalization in mouseup to also select text boxes
+// We'll patch this by wrapping the marquee logic. Since the marquee code
+// already exists in the global mouseup, we'll add a secondary check.
+
+// Store ref to detect marquee completion in the existing handler
+// We do this via a MutationObserver approach — but simpler: just add another
+// mouseup listener that checks for marquee area and selects text boxes too.
+window.addEventListener('mouseup', (e) => {
+  // This runs after the main mouseup which handles marquee for cells.
+  // We look at selectedIndices to see if a marquee selection just happened,
+  // and also check text boxes in the same region.
+  // Since marqueeEl is removed by the main handler, we use a brief state flag.
+});
+
+// Instead, we'll intercept the marquee finalization directly by modifying the main handler.
+// We do this by storing marquee bounds before the main handler clears them.
+
+// ===================== TEXT BOX EXPORT (Canvas 2D drawing) =====================
+function drawTextBoxToCanvas(ctx, tb) {
+  ctx.save();
+
+  const fontSize = tb.fontSize;
+  const fontWeight = tb.bold ? 'bold' : 'normal';
+  const fontStyle = tb.italic ? 'italic' : 'normal';
+  const fontFamily = tb.fontFamily;
+  
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+  ctx.fillStyle = tb.fontColor;
+  ctx.textBaseline = 'top';
+
+  // Get the plain text (strip HTML tags, handle <br> as newlines, decode entities)
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = tb.text;
+  // Convert <br> and <div> boundaries to newlines
+  const textContent = tb.text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/div><div>/gi, '\n')
+    .replace(/<div>/gi, '\n')
+    .replace(/<\/div>/gi, '')
+    .replace(/<[^>]*>/g, '');
+  // Decode HTML entities
+  tempDiv.innerHTML = textContent;
+  const decoded = tempDiv.textContent || tempDiv.innerText || '';
+
+  const lines = decoded.split('\n');
+  const lineHeight = fontSize * 1.3;
+  const boxWidth = tb.width || 9999;
+
+  // Word-wrap each line to fit within boxWidth
+  const wrappedLines = [];
+  lines.forEach(line => {
+    if (line === '') { wrappedLines.push(''); return; }
+    const words = line.split(' ');
+    let currentLine = '';
+    words.forEach(word => {
+      const testLine = currentLine ? currentLine + ' ' + word : word;
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > boxWidth && currentLine) {
+        wrappedLines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    });
+    if (currentLine) wrappedLines.push(currentLine);
+  });
+
+  wrappedLines.forEach((line, i) => {
+    let drawX = tb.x;
+    if (tb.align === 'center' && tb.width) {
+      const w = ctx.measureText(line).width;
+      drawX = tb.x + (tb.width - w) / 2;
+    } else if (tb.align === 'right' && tb.width) {
+      const w = ctx.measureText(line).width;
+      drawX = tb.x + tb.width - w;
+    }
+    ctx.fillText(line, drawX, tb.y + i * lineHeight);
+  });
+
+  // Underline
+  if (tb.underline) {
+    ctx.strokeStyle = tb.fontColor;
+    ctx.lineWidth = Math.max(1, fontSize / 14);
+    wrappedLines.forEach((line, i) => {
+      const w = ctx.measureText(line).width;
+      let lx = tb.x;
+      if (tb.align === 'center' && tb.width) lx = tb.x + (tb.width - w) / 2;
+      else if (tb.align === 'right' && tb.width) lx = tb.x + tb.width - w;
+      const ly = tb.y + i * lineHeight + fontSize + 2;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx + w, ly);
+      ctx.stroke();
+    });
+  }
+
+  ctx.restore();
+}
+
+// ===================== TEMPLATE SWITCH: REBUILD TEXT BOXES =====================
+const _origSwitchTemplate = switchTemplate;
+switchTemplate = function(idx) {
+  // Finalize any active text editing
+  if (activeTextBoxId) finalizeTextBox(activeTextBoxId);
+  deselectAllTextBoxes();
+  exitTextPlaceMode();
+
+  _origSwitchTemplate(idx);
+
+  // Re-add text box DOM elements for the new template
+  const state = templateStates[idx];
+  if (state && state.textBoxes) {
+    state.textBoxes.forEach(tb => {
+      canvasArea.appendChild(tb.el);
+    });
+  }
+};
+
+// ===================== PREVENT DESELECT WHEN CLICKING RIGHT SIDEBAR =====================
+// The existing global mousedown deselects when clicking outside canvas/cells.
+// We need to also exempt the right sidebar.
+// We'll add the exemption by patching — the existing handler already checks for buttons/inputs.
+// But we also need to exempt the right sidebar area. We'll handle this by adding
+// a stopPropagation on the right sidebar's mousedown.
+document.getElementById('rightSidebar').addEventListener('mousedown', (e) => {
+  // Don't let this bubble to the global deselect handler
+  e.stopPropagation();
+});
+
+// Initialize format section as disabled
+document.getElementById('textFormatSection').classList.add('rs-disabled');
+document.getElementById('textColorSection').classList.add('rs-disabled');
 
 // ===================== DOWNLOAD HANDLER =====================
 document.getElementById('downloadBtn').addEventListener('click', async () => {
