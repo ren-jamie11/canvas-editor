@@ -154,28 +154,46 @@
     background: transparent;
     overflow: hidden;
     cursor: default;
-    outline: 2px solid transparent;
-    outline-offset: -2px;
-    transition: outline-color 0.15s, filter 0.15s, background 0.15s;
+    transition: filter 0.15s, background 0.15s;
   }
 
   .cell.has-image { background: #141417; }
 
-  .cell.selected { outline-color: #5a5aff; }
+  /* OVERLAYS: Used to draw inner borders smoothly around frames based on states */
+  
+  /* 1. Base overlay for ALL rectangular cells */
+  .cell:not(.shaped)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 0px solid transparent;
+    pointer-events: none;
+    z-index: 5;
+    transition: border-color 0.15s, border-width 0.15s;
+  }
 
-  /* Border for empty rectangular (non-shaped) frames */
-  .cell:not(.has-image):not(.shaped) {
+  /* 2. Empty rectangular cell gets default frame border */
+  .cell:not(.shaped):not(.has-image)::after {
     border: var(--frame-border-width) solid var(--frame-border-color);
   }
 
+  /* 3. Selected rectangular cell gets selection border */
+  .cell:not(.shaped).selected::after {
+    border: var(--selection-border-width) solid var(--selection-border-color);
+  }
+
+  /* 4. Swapping rectangular cell gets swap border */
+  .cell:not(.shaped).swap-source::after,
+  .cell:not(.shaped).swap-target::after {
+    border: var(--selection-border-width) solid #20c997;
+  }
+
   .cell.swap-source {
-    outline-color: #20c997 !important;
     filter: brightness(0.7);
     z-index: 5;
   }
 
   .cell.swap-target {
-    outline-color: #20c997 !important;
     background: rgba(32, 201, 151, 0.15) !important;
   }
 
@@ -247,9 +265,28 @@
     fill: none;
     stroke: var(--frame-border-color);
     stroke-width: calc(var(--frame-border-width-num) * 2);
+    transition: stroke 0.15s, stroke-width 0.15s;
   }
 
+  /* Shape selection states logic */
   .cell.has-image .shape-outline { display: none; }
+  
+  .cell.has-image.selected .shape-outline,
+  .cell.has-image.swap-source .shape-outline,
+  .cell.has-image.swap-target .shape-outline {
+    display: block;
+  }
+
+  .cell.shaped.selected .shape-outline svg .outline-path {
+    stroke: var(--selection-border-color);
+    stroke-width: calc(var(--selection-border-width-num) * 2);
+  }
+
+  .cell.shaped.swap-source .shape-outline svg .outline-path,
+  .cell.shaped.swap-target .shape-outline svg .outline-path {
+    stroke: #20c997;
+    stroke-width: calc(var(--selection-border-width-num) * 2);
+  }
 
   .cell-label {
     position: absolute;
@@ -374,17 +411,23 @@
   .cell {
     z-index: 1;
   }
+
+  /* ---- Marquee selection box ---- */
+  .marquee-box {
+    position: absolute;
+    border: 1.5px dashed rgba(90, 90, 255, 0.7);
+    background: rgba(90, 90, 255, 0.08);
+    pointer-events: none;
+    z-index: 200;
+  }
 </style>
 </head>
 <body>
 
-<!-- Sidebar with template tabs -->
 <div class="sidebar" id="sidebar">
   <div class="sidebar-title">Templates</div>
-  <!-- Tabs will be generated dynamically -->
-</div>
+  </div>
 
-<!-- Main editor area -->
 <div class="main-content">
   <h1>Canvas Frame Editor</h1>
 
@@ -410,9 +453,9 @@
   <div class="canvas-area" id="canvasArea"></div>
 
   <div class="hint">
-    Click to select · Click empty frame to upload · Drag to pan · Scroll to zoom<br/>
-    <b>Double-click and drag</b> to swap images · <b>Ctrl+Click</b> to replace image<br/>
-    <b>Shift+Drag</b> to move frame · <b>Shift+Scroll</b> to resize frame<br/>
+    Click frame to select · <b>Ctrl+Click</b> to multi-select · <b>Drag on canvas</b> to box-select · <b>Delete</b> to remove<br/>
+    Drag to pan image · Scroll selected to zoom · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
+    <b>Shift+Drag</b> to move frames · <b>Shift+Scroll</b> to resize frames · <b>Ctrl+Drag</b> to duplicate<br/>
     Unlock background to drag &amp; scroll-zoom the background image
   </div>
 
@@ -519,10 +562,20 @@ const TEMPLATES = [
 const FRAME_BORDER_WIDTH = 1.5;           // px
 const FRAME_BORDER_COLOR = 'rgba(255, 255, 255, 0.36)';
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   SELECTION INDICATOR (for selected frames with images)                ║
+// ║   Edit these values to change the look of the selection border.        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const SELECTION_BORDER_COLOR = '#ffffff';    // color of the selection outline
+const SELECTION_BORDER_WIDTH = 3;            // reduced outline thickness so it doesn't break rendering
+
 // Inject as CSS custom properties so both CSS and SVG can reference them
 document.documentElement.style.setProperty('--frame-border-width', FRAME_BORDER_WIDTH + 'px');
 document.documentElement.style.setProperty('--frame-border-width-num', FRAME_BORDER_WIDTH);
 document.documentElement.style.setProperty('--frame-border-color', FRAME_BORDER_COLOR);
+document.documentElement.style.setProperty('--selection-border-color', SELECTION_BORDER_COLOR);
+document.documentElement.style.setProperty('--selection-border-width', SELECTION_BORDER_WIDTH + 'px');
+document.documentElement.style.setProperty('--selection-border-width-num', SELECTION_BORDER_WIDTH);
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -611,24 +664,40 @@ let activeTemplateIndex = -1;
 
 // Pointers into the active template's state (set by switchTemplate)
 let cells = [];
-let selectedIndex = -1;
+let selectedIndices = new Set(); // multi-selection
 let CANVAS_W, CANVAS_H, CANVAS_BG_COLOR, CANVAS_BG_IMAGE, FRAMES;
 let bgImg = null, bgLoaded = false;
 
 // Drag / swap / resize state (transient — per interaction, not persisted)
 let dragging = false, dragCellIdx = -1;
-let dragStartX, dragStartY, dragStartPosX, dragStartPosY;
+let dragStartX, dragStartY;
 let swapping = false, swapSourceIdx = -1, swapTargetIdx = -1;
 let resizing = false, resizeCellIdx = -1;
 let resizeHandle = '', resizeStartX, resizeStartY, resizeStartScale, resizeStartPosX, resizeStartPosY;
 
 // Frame-level dragging (Shift+click+drag)
 let frameDragging = false, frameDragIdx = -1;
-let frameDragStartX, frameDragStartY, frameDragStartFrameX, frameDragStartFrameY;
+let frameDragStartX, frameDragStartY;
+
+// Duplicate-drag state (Ctrl+click+drag) - Multi-duplicate supported
+let duplicating = false, dupSourceIdx = -1;
+let dupCloneIndices = [];
+let dupDragStartX, dupDragStartY;
+let dupStartPositions = new Map(); // srcIdx -> {x, y}
+let dupCloneToStartPos = new Map(); // cloneIdx -> {x, y}
 
 // Background dragging state (when bg is unlocked)
 let bgDragging = false;
 let bgDragStartX, bgDragStartY, bgDragStartPosX, bgDragStartPosY;
+
+// Marquee (box) selection state
+let marqueeActive = false;
+let marqueeStartX = 0, marqueeStartY = 0;
+let marqueeEl = null;
+
+// Multi-drag state: stores starting positions for all selected frames/images
+let multiDragStartPositions = null; // Map of ci -> { posX, posY }
+let multiFrameDragStartPositions = null; // Map of ci -> { x, y }
 
 // DOM refs
 const sidebar      = document.getElementById('sidebar');
@@ -682,7 +751,7 @@ function switchTemplate(idx) {
 
   const state = templateStates[idx];
   cells = state.cells;
-  selectedIndex = state.selectedIndex;
+  selectedIndices = state.selectedIndices;
   bgImg = state.bgImg;
   bgLoaded = state.bgLoaded;
 
@@ -702,7 +771,7 @@ function switchTemplate(idx) {
 
   // Re-apply selection highlight
   cells.forEach((s, i) => {
-    s.el.classList.toggle('selected', i === selectedIndex);
+    s.el.classList.toggle('selected', selectedIndices.has(i));
   });
 
   updateLabel();
@@ -720,13 +789,387 @@ function cancelInteractions() {
   bgDragging = false;
   swapping = false; swapSourceIdx = -1; swapTargetIdx = -1;
   resizing = false; resizeCellIdx = -1;
+  
+  duplicating = false; 
+  dupSourceIdx = -1; 
+  dupCloneIndices = [];
+  dupStartPositions.clear();
+  dupCloneToStartPos.clear();
+  
+  if (marqueeActive && marqueeEl) { marqueeEl.remove(); marqueeEl = null; }
+  marqueeActive = false;
+  multiDragStartPositions = null;
+  multiFrameDragStartPositions = null;
 }
 
 // ===================== CREATE ISOLATED STATE FOR A TEMPLATE =====================
+
+// Reusable function to create a single cell with DOM, state, and event handlers.
+// Can be called during initial template build or to duplicate a frame at runtime.
+function createCell(state, tmpl, cfg, i) {
+  getScaledPath(cfg);
+
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.dataset.index = i;
+
+  cell.style.left   = cfg.x + 'px';
+  cell.style.top    = cfg.y + 'px';
+  cell.style.width  = cfg.w + 'px';
+  cell.style.height = cfg.h + 'px';
+
+  const sp = getScaledPath(cfg);
+  if (sp) {
+    cell.classList.add('shaped');
+    cell.style.clipPath = `path('${sp}')`;
+  }
+
+  const lbl = document.createElement('div');
+  lbl.className = 'cell-label';
+  lbl.textContent = cfg.label || `Frame ${i + 1}`;
+  cell.appendChild(lbl);
+
+  if (sp) {
+    const outline = document.createElement('div');
+    outline.className = 'shape-outline';
+    outline.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="outline-path" d="${sp}"/></svg>`;
+    cell.appendChild(outline);
+  }
+
+  const upload = document.createElement('div');
+  upload.className = 'cell-upload';
+  upload.innerHTML = `
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <path d="M21 15l-5-5L5 21"/>
+    </svg>
+    <span>Upload</span>
+  `;
+  cell.appendChild(upload);
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*,.mpo';
+  cell.appendChild(fileInput);
+
+  const img = document.createElement('img');
+  cell.appendChild(img);
+
+  ['tl', 'tr', 'bl', 'br'].forEach(corner => {
+    const h = document.createElement('div');
+    h.className = `handle handle-${corner}`;
+    h.dataset.handle = corner;
+    cell.appendChild(h);
+  });
+
+  const cellState = {
+    el: cell,
+    img: img,
+    fileInput: fileInput,
+    upload: upload,
+    cfg: cfg,
+    naturalW: 0,
+    naturalH: 0,
+    scale: 1,
+    posX: 0,
+    posY: 0,
+    loaded: false,
+    lastClickTime: 0,
+    _templateState: state,
+    _templateIndex: tmpl._index,
+    _cellIndex: i,
+  };
+
+  // ---- Event handlers (they capture cellState and state by closure) ----
+  // IMPORTANT: All handlers use cellState._cellIndex (not the construction-time i)
+  // so that deletion/duplication + re-indexing doesn't break references.
+  upload.addEventListener('click', (e) => {
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+    e.stopPropagation();
+    selectCellFor(state, cellState._cellIndex);
+    fileInput.click();
+  });
+
+  upload.addEventListener('wheel', (e) => {
+    if (e.shiftKey) e.preventDefault();
+  }, { passive: false });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    loadFileIntoCellState(file, cellState, state, cellState._cellIndex);
+    e.target.value = '';
+  });
+
+  cell.addEventListener('mousedown', (e) => {
+    if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
+
+    if (e.target.closest('.cell-upload') && !e.shiftKey && !e.ctrlKey && !e.metaKey) return;
+
+    const ci = cellState._cellIndex;
+
+    if (!cellState.loaded && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      deselectAll();
+      return;
+    }
+
+    // Ctrl/Cmd: enter a pending state — we don't know yet if it's a click
+    // (toggle multi-select) or a drag (duplicate multiple). The decision is deferred
+    // to mousemove (drag) or mouseup (click).
+    if ((e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      duplicating = true;
+      dupSourceIdx = ci;
+      dupCloneIndices = [];
+      dupDragStartX = e.clientX;
+      dupDragStartY = e.clientY;
+
+      dupStartPositions.clear();
+      let sources = selectedIndices.has(ci) ? Array.from(selectedIndices) : [ci];
+      sources.forEach(idx => {
+         dupStartPositions.set(idx, { x: cells[idx].cfg.x, y: cells[idx].cfg.y });
+      });
+      return;
+    }
+
+    // For all other cases (no ctrl), select just this one if not already selected
+    if (!selectedIndices.has(ci)) {
+      selectCellFor(state, ci);
+    }
+
+    // Shift+click: start frame dragging for ALL selected frames
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      frameDragging = true;
+      frameDragIdx = ci;
+      frameDragStartX = e.clientX;
+      frameDragStartY = e.clientY;
+      multiFrameDragStartPositions = new Map();
+      selectedIndices.forEach(idx => {
+        const s = cells[idx];
+        multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
+        s.el.classList.add('dragging');
+      });
+      return;
+    }
+
+    // Alt+click: replace image (was previously Ctrl+click)
+    if (e.altKey && cellState.loaded) {
+      e.preventDefault();
+      e.stopPropagation();
+      cellState.fileInput.click();
+      return;
+    }
+
+    const now = Date.now();
+    if (cellState.loaded && (now - cellState.lastClickTime) < 300) {
+      e.preventDefault();
+      swapping = true;
+      swapSourceIdx = ci;
+      cell.classList.add('swap-source', 'swapping');
+      cellState.lastClickTime = 0;
+      return;
+    }
+    cellState.lastClickTime = now;
+
+    if (e.target.classList.contains('handle') && cellState.loaded) {
+      e.stopPropagation();
+      resizing = true;
+      resizeCellIdx = ci;
+      resizeHandle = e.target.dataset.handle;
+      resizeStartX = e.clientX;
+      resizeStartY = e.clientY;
+      resizeStartScale = cellState.scale;
+      resizeStartPosX = cellState.posX;
+      resizeStartPosY = cellState.posY;
+      return;
+    }
+
+    if (cellState.loaded) {
+      dragging = true;
+      dragCellIdx = ci;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      multiDragStartPositions = new Map();
+      selectedIndices.forEach(idx => {
+        const s = cells[idx];
+        if (s.loaded) {
+          multiDragStartPositions.set(idx, { posX: s.posX, posY: s.posY });
+        }
+        s.el.classList.add('dragging');
+      });
+      e.preventDefault();
+    }
+  });
+
+  cell.addEventListener('wheel', (e) => {
+    if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
+
+    const ci = cellState._cellIndex;
+
+    const hasSelection = selectedIndices.size > 0;
+    const targetIndices = hasSelection ? [...selectedIndices] : [ci];
+
+    if (e.shiftKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -5 : 5;
+
+      targetIndices.forEach(idx => {
+        const s = cells[idx];
+        if (!s) return;
+        const cfg = s.cfg;
+        const aspect = cfg.w / cfg.h;
+        const newW = cfg.w + delta;
+        const newH = newW / aspect;
+
+        if (newW < 30 || newH < 30) return;
+        if (cfg.x + newW > CANVAS_W || cfg.y + newH > CANVAS_H) return;
+        if (newW <= 0 || newH <= 0) return;
+
+        const oldW = cfg.w;
+        cfg.w = newW;
+        cfg.h = newH;
+
+        s.el.style.width = cfg.w + 'px';
+        s.el.style.height = cfg.h + 'px';
+
+        updateFrameShape(s);
+
+        if (s.loaded) {
+          const ratio = newW / oldW;
+          s.posX *= ratio;
+          s.posY *= ratio;
+          s.scale *= ratio;
+          applyTransformFor(state, idx);
+        }
+      });
+
+      updateLabel();
+      return;
+    }
+
+    e.preventDefault();
+
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+
+    const hoveredRect = cell.getBoundingClientRect();
+    const mx = e.clientX - hoveredRect.left;
+    const my = e.clientY - hoveredRect.top;
+
+    targetIndices.forEach(idx => {
+      const s = cells[idx];
+      if (!s || !s.loaded) return;
+
+      const oldScale = s.scale;
+      s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s.scale + delta));
+
+      if (idx === ci) {
+        s.posX = mx - (mx - s.posX) * (s.scale / oldScale);
+        s.posY = my - (my - s.posY) * (s.scale / oldScale);
+      } else {
+        const cx = s.cfg.w / 2;
+        const cy = s.cfg.h / 2;
+        s.posX = cx - (cx - s.posX) * (s.scale / oldScale);
+        s.posY = cy - (cy - s.posY) * (s.scale / oldScale);
+      }
+
+      applyTransformFor(state, idx);
+    });
+  }, { passive: false });
+
+  return cellState;
+}
+
+// Re-index all cells in the active state so _cellIndex and dataset.index stay in sync.
+function reIndexCells(state) {
+  state.cells.forEach((c, idx) => {
+    c.el.dataset.index = idx;
+    c._cellIndex = idx;
+  });
+}
+
+// Duplicate a cell: creates a deep copy of its frame config and image data,
+// appends the new cell to the state and the DOM, and returns the new cell's index.
+function duplicateCell(sourceIdx, newX, newY) {
+  const state = templateStates[activeTemplateIndex];
+  const tmpl = TEMPLATES[activeTemplateIndex];
+  const src = state.cells[sourceIdx];
+  if (!src) return -1;
+
+  // Deep-copy the frame config so the clone is independent
+  const newCfg = {
+    x: newX,
+    y: newY,
+    w: src.cfg.w,
+    h: src.cfg.h,
+    shape: src.cfg.shape || null,
+    label: (src.cfg.label || 'Frame') + ' copy',
+  };
+  // Clear any cached scaled path so it's recomputed for the new config object
+  delete newCfg._scaledPath;
+  
+  // Update template config array to keep it in sync for proper export/state mgmt
+  tmpl.frames.push(newCfg);
+
+  const newIdx = state.cells.length;
+  const newCell = createCell(state, tmpl, newCfg, newIdx);
+  state.cells.push(newCell);
+
+  // If the source had an image loaded, copy it into the clone via an
+  // independent blob URL.  We draw the source onto an offscreen canvas and
+  // call toBlob() so the clone owns its own URL – revoking the original's
+  // blob (on delete) won't affect the clone.
+  if (src.loaded && src.img.naturalWidth > 0) {
+    // Snapshot transform values *now* so they survive even if src is deleted
+    // before the async blob callback fires.
+    const snapScale = src.scale;
+    const snapPosX  = src.posX;
+    const snapPosY  = src.posY;
+    const snapNatW  = src.naturalW;
+    const snapNatH  = src.naturalH;
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width  = src.img.naturalWidth;
+    offscreen.height = src.img.naturalHeight;
+    const octx = offscreen.getContext('2d');
+    octx.drawImage(src.img, 0, 0);
+
+    offscreen.toBlob((blob) => {
+      if (!blob) return;
+      const freshURL = URL.createObjectURL(blob);
+      const freshImg = new Image();
+      freshImg.onload = () => {
+        newCell.naturalW = snapNatW;
+        newCell.naturalH = snapNatH;
+        newCell.loaded = true;
+        newCell.scale = snapScale;
+        newCell.posX  = snapPosX;
+        newCell.posY  = snapPosY;
+        newCell.el.classList.add('has-image');
+        newCell.img.src = freshURL;
+        applyTransformFor(state, newCell._cellIndex);
+      };
+      freshImg.src = freshURL;
+    }, 'image/png');
+  }
+
+  // Add to the DOM
+  canvasArea.appendChild(newCell.el);
+
+  // Update the global cells reference
+  cells = state.cells;
+
+  return newIdx;
+}
+
 function createTemplateState(tmpl) {
   const state = {
     cells: [],
-    selectedIndex: -1,
+    selectedIndices: new Set(),
     bgImg: new Image(),
     bgLoaded: false,
     // Background transform state (like an image inside a "canvas-sized frame")
@@ -770,219 +1213,8 @@ function createTemplateState(tmpl) {
 
   // Build cells
   tmpl.frames.forEach((cfg, i) => {
-    getScaledPath(cfg);
-
-    const cell = document.createElement('div');
-    cell.className = 'cell';
-    cell.dataset.index = i;
-
-    cell.style.left   = cfg.x + 'px';
-    cell.style.top    = cfg.y + 'px';
-    cell.style.width  = cfg.w + 'px';
-    cell.style.height = cfg.h + 'px';
-
-    const sp = getScaledPath(cfg);
-    if (sp) {
-      cell.classList.add('shaped');
-      cell.style.clipPath = `path('${sp}')`;
-    }
-
-    const lbl = document.createElement('div');
-    lbl.className = 'cell-label';
-    lbl.textContent = cfg.label || `Frame ${i + 1}`;
-    cell.appendChild(lbl);
-
-    if (sp) {
-      const outline = document.createElement('div');
-      outline.className = 'shape-outline';
-      outline.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="outline-path" d="${sp}"/></svg>`;
-      cell.appendChild(outline);
-    }
-
-    const upload = document.createElement('div');
-    upload.className = 'cell-upload';
-    upload.innerHTML = `
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2"/>
-        <circle cx="8.5" cy="8.5" r="1.5"/>
-        <path d="M21 15l-5-5L5 21"/>
-      </svg>
-      <span>Upload</span>
-    `;
-    cell.appendChild(upload);
-
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'image/*,.mpo';
-    cell.appendChild(fileInput);
-
-    const img = document.createElement('img');
-    cell.appendChild(img);
-
-    ['tl', 'tr', 'bl', 'br'].forEach(corner => {
-      const h = document.createElement('div');
-      h.className = `handle handle-${corner}`;
-      h.dataset.handle = corner;
-      cell.appendChild(h);
-    });
-
-    const cellState = {
-      el: cell,
-      img: img,
-      fileInput: fileInput,
-      upload: upload,
-      cfg: cfg,
-      naturalW: 0,
-      naturalH: 0,
-      scale: 1,
-      posX: 0,
-      posY: 0,
-      loaded: false,
-      lastClickTime: 0,
-      // Store a reference back to the template state for event handlers
-      _templateState: state,
-      _templateIndex: tmpl._index,
-      _cellIndex: i,
-    };
-
+    const cellState = createCell(state, tmpl, cfg, i);
     state.cells.push(cellState);
-
-    // ---- Event handlers (they capture cellState and state by closure) ----
-    upload.addEventListener('click', (e) => {
-      if (e.shiftKey) return; // let frame drag handle it
-      e.stopPropagation();
-      selectCellFor(state, i);
-      fileInput.click();
-    });
-
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      loadFileIntoCellState(file, cellState, state, i);
-      e.target.value = '';
-    });
-
-    cell.addEventListener('mousedown', (e) => {
-      // Ensure this template is active (clicks on detached DOM won't fire, but just in case)
-      if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
-
-      if (e.target.closest('.cell-upload') && !e.shiftKey) return;
-      selectCellFor(state, i);
-
-      // Shift+click: start frame dragging (reposition the frame itself)
-      if (e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        frameDragging = true;
-        frameDragIdx = i;
-        frameDragStartX = e.clientX;
-        frameDragStartY = e.clientY;
-        frameDragStartFrameX = cellState.cfg.x;
-        frameDragStartFrameY = cellState.cfg.y;
-        cell.classList.add('dragging');
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && cellState.loaded) {
-        e.preventDefault();
-        e.stopPropagation();
-        cellState.fileInput.click();
-        return;
-      }
-
-      const now = Date.now();
-      if (cellState.loaded && (now - cellState.lastClickTime) < 300) {
-        e.preventDefault();
-        swapping = true;
-        swapSourceIdx = i;
-        cell.classList.add('swap-source', 'swapping');
-        cellState.lastClickTime = 0;
-        return;
-      }
-      cellState.lastClickTime = now;
-
-      if (e.target.classList.contains('handle') && cellState.loaded) {
-        e.stopPropagation();
-        resizing = true;
-        resizeCellIdx = i;
-        resizeHandle = e.target.dataset.handle;
-        resizeStartX = e.clientX;
-        resizeStartY = e.clientY;
-        resizeStartScale = cellState.scale;
-        resizeStartPosX = cellState.posX;
-        resizeStartPosY = cellState.posY;
-        return;
-      }
-
-      if (cellState.loaded) {
-        dragging = true;
-        dragCellIdx = i;
-        cell.classList.add('dragging');
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        dragStartPosX = cellState.posX;
-        dragStartPosY = cellState.posY;
-        e.preventDefault();
-      }
-    });
-
-    cell.addEventListener('wheel', (e) => {
-      if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
-      e.preventDefault();
-      selectCellFor(state, i);
-
-      // Shift+scroll: resize the frame itself (maintaining aspect ratio)
-      if (e.shiftKey) {
-        const cfg = cellState.cfg;
-        const aspect = cfg.w / cfg.h;
-        const delta = e.deltaY > 0 ? -5 : 5;
-        const newW = cfg.w + delta;
-        const newH = newW / aspect;
-
-        // Enforce minimum size
-        if (newW < 30 || newH < 30) return;
-
-        // Clamp to canvas boundaries
-        if (cfg.x + newW > CANVAS_W || cfg.y + newH > CANVAS_H) return;
-        if (newW <= 0 || newH <= 0) return;
-
-        const oldW = cfg.w;
-        const oldH = cfg.h;
-        cfg.w = newW;
-        cfg.h = newH;
-
-        // Update DOM
-        cell.style.width = cfg.w + 'px';
-        cell.style.height = cfg.h + 'px';
-
-        // Recompute scaled path for shaped frames
-        updateFrameShape(cellState);
-
-        // Scale the image position proportionally so it stays in place
-        if (cellState.loaded) {
-          const ratio = newW / oldW;
-          cellState.posX *= ratio;
-          cellState.posY *= ratio;
-          cellState.scale *= ratio;
-          applyTransformFor(state, i);
-        }
-
-        updateLabel();
-        return;
-      }
-
-      if (!cellState.loaded) return;
-
-      const rect = cell.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const oldScale = cellState.scale;
-      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      cellState.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, cellState.scale + delta));
-      cellState.posX = mx - (mx - cellState.posX) * (cellState.scale / oldScale);
-      cellState.posY = my - (my - cellState.posY) * (cellState.scale / oldScale);
-      applyTransformFor(state, i);
-    }, { passive: false });
   });
 
   return state;
@@ -1040,24 +1272,49 @@ function updateFrameShape(cellState) {
 
 // ===================== STATE-AWARE HELPERS =====================
 function selectCellFor(state, i) {
-  if (state.selectedIndex === i) return;
-  if (state.selectedIndex >= 0) state.cells[state.selectedIndex].el.classList.remove('selected');
-  state.selectedIndex = i;
+  deselectAll();
+  state.selectedIndices.add(i);
   state.cells[i].el.classList.add('selected');
-  // Sync module-level selected index if this is the active template
-  selectedIndex = state.selectedIndex;
+  selectedIndices = state.selectedIndices;
+  updateLabel();
+}
+
+function selectMultiple(state, indices) {
+  deselectAll();
+  indices.forEach(i => {
+    state.selectedIndices.add(i);
+    state.cells[i].el.classList.add('selected');
+  });
+  selectedIndices = state.selectedIndices;
+  updateLabel();
+}
+
+function deselectAll() {
+  const state = templateStates[activeTemplateIndex];
+  if (!state) return;
+  state.selectedIndices.forEach(i => {
+    if (state.cells[i]) state.cells[i].el.classList.remove('selected');
+  });
+  state.selectedIndices.clear();
+  selectedIndices = state.selectedIndices;
   updateLabel();
 }
 
 function updateLabel() {
-  if (selectedIndex < 0) {
+  if (selectedIndices.size === 0) {
     selectedLabel.textContent = 'Click a frame to select it';
     zoomDisplay.textContent = '';
     return;
   }
-  const s = cells[selectedIndex];
-  selectedLabel.textContent = s.cfg.label || `Frame ${selectedIndex + 1}`;
-  zoomDisplay.textContent = s.loaded ? Math.round(s.scale * 100) + '%' : '';
+  if (selectedIndices.size === 1) {
+    const idx = [...selectedIndices][0];
+    const s = cells[idx];
+    selectedLabel.textContent = s.cfg.label || `Frame ${idx + 1}`;
+    zoomDisplay.textContent = s.loaded ? Math.round(s.scale * 100) + '%' : '';
+  } else {
+    selectedLabel.textContent = `${selectedIndices.size} frames selected`;
+    zoomDisplay.textContent = '';
+  }
 }
 
 function calculateDefaultTransform(s) {
@@ -1072,7 +1329,7 @@ function applyTransformFor(state, i) {
   if (!s.loaded) { s.img.style.transform = 'none'; return; }
   clampPosition(s);
   s.img.style.transform = `translate(${s.posX}px, ${s.posY}px) scale(${s.scale})`;
-  if (state === templateStates[activeTemplateIndex] && i === selectedIndex) updateLabel();
+  if (state === templateStates[activeTemplateIndex] && selectedIndices.has(i)) updateLabel();
 }
 
 function applyTransform(i) {
@@ -1150,6 +1407,89 @@ function performSwap(idxA, idxB) {
   applyTransform(idxB);
 }
 
+// ===================== DESELECT / MARQUEE SELECT ON CANVAS =====================
+// Clicking/dragging on the canvas background (not on a cell) starts marquee selection
+canvasArea.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.cell')) return;
+  // Don't start marquee if bg is unlocked and we're about to bg-drag
+  if (!lockBgToggle.checked) return;
+
+  deselectAll();
+
+  const rect = canvasArea.getBoundingClientRect();
+  marqueeStartX = e.clientX - rect.left;
+  marqueeStartY = e.clientY - rect.top;
+  marqueeActive = true;
+
+  marqueeEl = document.createElement('div');
+  marqueeEl.className = 'marquee-box';
+  marqueeEl.style.left = marqueeStartX + 'px';
+  marqueeEl.style.top = marqueeStartY + 'px';
+  marqueeEl.style.width = '0px';
+  marqueeEl.style.height = '0px';
+  canvasArea.appendChild(marqueeEl);
+
+  e.preventDefault();
+});
+
+// Global mousedown handles deselecting when clicking anywhere else
+document.addEventListener('mousedown', (e) => {
+  // If clicking inside a cell, cell logic handles the event
+  if (e.target.closest('.cell')) return;
+  
+  // If clicking canvas area, canvas logic handles deselect and marquee dragging
+  if (e.target.closest('.canvas-area')) return;
+
+  // Prevent deselect when interacting with UI buttons, file inputs, or toggles
+  if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.lock-toggle')) return;
+
+  // Prevent deselect when switching tabs
+  if (e.target.closest('.tab-btn')) return;
+
+  // Otherwise, click was on the outer app wrapper (sidebar background, topbar space, general hints), so deselect
+  deselectAll();
+});
+
+// ===================== DELETE KEY HANDLER =====================
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    // Don't intercept if user is typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (selectedIndices.size === 0) return;
+    const state = templateStates[activeTemplateIndex];
+    const tmpl = TEMPLATES[activeTemplateIndex];
+
+    const toDelete = [...selectedIndices].filter(idx => cells[idx]);
+    if (toDelete.length === 0) return;
+
+    e.preventDefault();
+
+    // Sort descending so splicing doesn't shift indices of items still to delete
+    toDelete.sort((a, b) => b - a);
+
+    toDelete.forEach(cellIdx => {
+      const s = cells[cellIdx];
+      if (s.img.src && s.img.src.startsWith('blob:')) {
+        URL.revokeObjectURL(s.img.src);
+      }
+      s.el.remove();
+      state.cells.splice(cellIdx, 1);
+      tmpl.frames.splice(cellIdx, 1); // Keep template config in sync for accurate export
+    });
+
+    cells = state.cells;
+
+    // Re-index remaining cell elements
+    reIndexCells(state);
+
+    // Clear selection
+    state.selectedIndices.clear();
+    selectedIndices = state.selectedIndices;
+    updateLabel();
+  }
+});
+
 // ===================== GLOBAL MOUSE / KEYBOARD HANDLERS =====================
 window.addEventListener('mousemove', (e) => {
   if (swapping && swapSourceIdx >= 0) {
@@ -1169,28 +1509,83 @@ window.addEventListener('mousemove', (e) => {
     }
   }
 
-  if (dragging && dragCellIdx >= 0 && !swapping) {
-    const s = cells[dragCellIdx];
-    s.posX = dragStartPosX + (e.clientX - dragStartX);
-    s.posY = dragStartPosY + (e.clientY - dragStartY);
-    applyTransform(dragCellIdx);
+  // Multi-image-drag: apply same delta to all selected loaded frames
+  if (dragging && dragCellIdx >= 0 && !swapping && multiDragStartPositions) {
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    multiDragStartPositions.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s || !s.loaded) return;
+      s.posX = start.posX + dx;
+      s.posY = start.posY + dy;
+      applyTransform(idx);
+    });
   }
 
-  // Frame-level dragging (Shift+drag to reposition frame)
-  if (frameDragging && frameDragIdx >= 0) {
-    const s = cells[frameDragIdx];
-    const cfg = s.cfg;
-    let newX = frameDragStartFrameX + (e.clientX - frameDragStartX);
-    let newY = frameDragStartFrameY + (e.clientY - frameDragStartY);
+  // Multi-frame-drag (Shift+drag): reposition all selected frames
+  if (frameDragging && frameDragIdx >= 0 && multiFrameDragStartPositions) {
+    const dx = e.clientX - frameDragStartX;
+    const dy = e.clientY - frameDragStartY;
+    multiFrameDragStartPositions.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      const cfg = s.cfg;
+      let newX = start.x + dx;
+      let newY = start.y + dy;
+      newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
+      newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
+      cfg.x = newX;
+      cfg.y = newY;
+      s.el.style.left = cfg.x + 'px';
+      s.el.style.top = cfg.y + 'px';
+    });
+  }
 
-    // Clamp to canvas boundaries
-    newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
-    newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
+  // Duplicate-drag (Ctrl+drag): create clones on first move, then reposition them
+  if (duplicating && dupSourceIdx >= 0) {
+    const dx = e.clientX - dupDragStartX;
+    const dy = e.clientY - dupDragStartY;
 
-    cfg.x = newX;
-    cfg.y = newY;
-    s.el.style.left = cfg.x + 'px';
-    s.el.style.top = cfg.y + 'px';
+    // Create clones lazily on first meaningful move (>3px)
+    if (dupCloneIndices.length === 0 && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+      dupCloneToStartPos.clear();
+      
+      dupStartPositions.forEach((pos, srcIdx) => {
+         const cloneIdx = duplicateCell(srcIdx, pos.x, pos.y);
+         if (cloneIdx >= 0) {
+            dupCloneIndices.push(cloneIdx);
+            dupCloneToStartPos.set(cloneIdx, pos);
+            cells[srcIdx].el.style.opacity = '0.4'; // Dim source indicator
+         }
+      });
+      
+      // Select the clones
+      deselectAll();
+      const state = templateStates[activeTemplateIndex];
+      dupCloneIndices.forEach(cloneIdx => {
+         state.selectedIndices.add(cloneIdx);
+         cells[cloneIdx].el.classList.add('selected', 'dragging');
+      });
+      updateLabel();
+    }
+
+    // Move the clones
+    if (dupCloneIndices.length > 0) {
+      dupCloneIndices.forEach(cloneIdx => {
+         const s = cells[cloneIdx];
+         if(!s) return;
+         const cfg = s.cfg;
+         const startPos = dupCloneToStartPos.get(cloneIdx);
+         let newX = startPos.x + dx;
+         let newY = startPos.y + dy;
+         newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
+         newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
+         cfg.x = newX;
+         cfg.y = newY;
+         s.el.style.left = cfg.x + 'px';
+         s.el.style.top = cfg.y + 'px';
+      });
+    }
   }
 
   if (resizing && resizeCellIdx >= 0 && !swapping) {
@@ -1228,9 +1623,24 @@ window.addEventListener('mousemove', (e) => {
     state.bgPosY = bgDragStartPosY + (e.clientY - bgDragStartY);
     applyBgTransform(state);
   }
+
+  // Marquee selection drawing
+  if (marqueeActive && marqueeEl) {
+    const rect = canvasArea.getBoundingClientRect();
+    const curX = e.clientX - rect.left;
+    const curY = e.clientY - rect.top;
+    const left = Math.max(0, Math.min(marqueeStartX, curX));
+    const top = Math.max(0, Math.min(marqueeStartY, curY));
+    const right = Math.min(CANVAS_W, Math.max(marqueeStartX, curX));
+    const bottom = Math.min(CANVAS_H, Math.max(marqueeStartY, curY));
+    marqueeEl.style.left = left + 'px';
+    marqueeEl.style.top = top + 'px';
+    marqueeEl.style.width = (right - left) + 'px';
+    marqueeEl.style.height = (bottom - top) + 'px';
+  }
 });
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
   if (swapping && swapSourceIdx >= 0) {
     if (swapTargetIdx >= 0 && swapTargetIdx !== swapSourceIdx && cells[swapTargetIdx].loaded) {
       performSwap(swapSourceIdx, swapTargetIdx);
@@ -1241,13 +1651,93 @@ window.addEventListener('mouseup', () => {
     swapTargetIdx = -1;
   }
 
-  if (dragging && dragCellIdx >= 0) cells[dragCellIdx].el.classList.remove('dragging');
+  if (dragging && dragCellIdx >= 0) {
+    selectedIndices.forEach(idx => { if (cells[idx]) cells[idx].el.classList.remove('dragging'); });
+  }
   dragging = false; dragCellIdx = -1;
-  if (frameDragging && frameDragIdx >= 0) cells[frameDragIdx].el.classList.remove('dragging');
+  multiDragStartPositions = null;
+
+  if (frameDragging && frameDragIdx >= 0) {
+    selectedIndices.forEach(idx => { if (cells[idx]) cells[idx].el.classList.remove('dragging'); });
+  }
   frameDragging = false; frameDragIdx = -1;
+  multiFrameDragStartPositions = null;
+
+  // Finalize duplicate-drag OR ctrl+click multi-select
+  if (duplicating) {
+    if (dupCloneIndices.length > 0) {
+      // Clones were created (drag happened) — clean up temporary states
+      dupStartPositions.forEach((_, srcIdx) => {
+         if (cells[srcIdx]) {
+            cells[srcIdx].el.style.opacity = '';
+            cells[srcIdx].el.classList.remove('dragging');
+         }
+      });
+      dupCloneIndices.forEach(cloneIdx => {
+         if (cells[cloneIdx]) {
+            cells[cloneIdx].el.classList.remove('dragging');
+         }
+      });
+    } else {
+      // No clone was created — this was a ctrl+click (no drag).
+      // Toggle the clicked frame in/out of the multi-selection.
+      if (dupSourceIdx >= 0) {
+        const state = templateStates[activeTemplateIndex];
+        if (selectedIndices.has(dupSourceIdx)) {
+          // Already selected → deselect it
+          selectedIndices.delete(dupSourceIdx);
+          if (cells[dupSourceIdx]) cells[dupSourceIdx].el.classList.remove('selected');
+        } else {
+          // Not selected → add to selection
+          selectedIndices.add(dupSourceIdx);
+          if (cells[dupSourceIdx]) cells[dupSourceIdx].el.classList.add('selected');
+        }
+        updateLabel();
+      }
+    }
+    duplicating = false;
+    dupSourceIdx = -1;
+    dupCloneIndices = [];
+    dupStartPositions.clear();
+    dupCloneToStartPos.clear();
+  }
+
   if (bgDragging) canvasArea.classList.remove('bg-dragging');
   bgDragging = false;
   resizing = false; resizeCellIdx = -1;
+
+  // Finalize marquee selection
+  if (marqueeActive && marqueeEl) {
+    const mLeft = parseFloat(marqueeEl.style.left) || 0;
+    const mTop = parseFloat(marqueeEl.style.top) || 0;
+    const mW = parseFloat(marqueeEl.style.width) || 0;
+    const mH = parseFloat(marqueeEl.style.height) || 0;
+    const mRight = mLeft + mW;
+    const mBottom = mTop + mH;
+
+    marqueeEl.remove();
+    marqueeEl = null;
+    marqueeActive = false;
+
+    // Only select if the marquee has meaningful size (>4px drag)
+    if (mW > 4 || mH > 4) {
+      const state = templateStates[activeTemplateIndex];
+      const hitIndices = [];
+      cells.forEach((s, idx) => {
+        const cfg = s.cfg;
+        // Frame is fully contained within the marquee box
+        if (cfg.x >= mLeft && cfg.y >= mTop &&
+            cfg.x + cfg.w <= mRight && cfg.y + cfg.h <= mBottom) {
+          hitIndices.push(idx);
+        }
+      });
+      if (hitIndices.length > 0) {
+        selectMultiple(state, hitIndices);
+      } else {
+        deselectAll();
+      }
+    }
+  }
 });
 
 // ===================== BULK UPLOAD HANDLERS =====================
@@ -1288,11 +1778,13 @@ bulkFileInput.addEventListener('change', (e) => {
 
 // ===================== RESET BUTTONS =====================
 document.getElementById('resetBtn').addEventListener('click', () => {
-  if (selectedIndex < 0) return;
-  const s = cells[selectedIndex];
-  if (!s.loaded) return;
-  calculateDefaultTransform(s);
-  applyTransform(selectedIndex);
+  if (selectedIndices.size === 0) return;
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s.loaded) return;
+    calculateDefaultTransform(s);
+    applyTransform(idx);
+  });
 });
 
 document.getElementById('resetAllBtn').addEventListener('click', () => {
@@ -1353,6 +1845,8 @@ canvasArea.addEventListener('mousedown', (e) => {
   if (lockBgToggle.checked) return;
   // Only start bg drag if clicking directly on canvasArea or the bg image, not on a cell
   if (e.target.closest('.cell')) return;
+
+  deselectAll();
 
   const state = templateStates[activeTemplateIndex];
   if (!state.bgLoaded) return;
