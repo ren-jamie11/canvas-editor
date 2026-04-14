@@ -234,22 +234,41 @@
     pointer-events: none;
   }
 
-  .cell .handle {
+  /* Frame stretch controls overlay (sibling of .cell, not clipped) */
+  .frame-controls {
     position: absolute;
-    width: 14px;
-    height: 14px;
-    background: rgba(90, 90, 255, 0.1);
-    border: 1.5px solid rgba(140, 140, 255, 0.35);
-    border-radius: 2px;
-    z-index: 10;
+    pointer-events: none;
+    z-index: 8;
     display: none;
   }
+  .frame-controls.visible { display: block; }
 
-  .cell.has-image.selected .handle { display: block; }
-  .cell .handle-tl { top: 4px;    left: 4px;   cursor: nw-resize; }
-  .cell .handle-tr { top: 4px;    right: 4px;  cursor: ne-resize; }
-  .cell .handle-bl { bottom: 4px; left: 4px;   cursor: sw-resize; }
-  .cell .handle-br { bottom: 4px; right: 4px;  cursor: se-resize; }
+  .frame-controls .frame-border {
+    position: absolute;
+    inset: -4px;
+    border: 1.5px solid rgba(90, 90, 255, 0.7);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+
+  .frame-controls .frame-stretch-handle {
+    position: absolute;
+    background: #5a5aff;
+    border-radius: 2px;
+    z-index: 11;
+    pointer-events: auto;
+  }
+
+  /* Edge midpoint handles — rectangular bars */
+  .frame-controls .fsh-l  { left: -5px;   top: 50%;    width: 6px; height: 28px; transform: translateY(-50%); cursor: ew-resize; }
+  .frame-controls .fsh-r  { right: -5px;  top: 50%;    width: 6px; height: 28px; transform: translateY(-50%); cursor: ew-resize; }
+  .frame-controls .fsh-t  { top: -5px;    left: 50%;   width: 28px; height: 6px; transform: translateX(-50%); cursor: ns-resize; }
+  .frame-controls .fsh-b  { bottom: -5px; left: 50%;   width: 28px; height: 6px; transform: translateX(-50%); cursor: ns-resize; }
+  /* Corner handles — larger squares */
+  .frame-controls .fsh-tl { top: -6px;    left: -6px;  width: 10px; height: 10px; cursor: nw-resize; }
+  .frame-controls .fsh-tr { top: -6px;    right: -6px; width: 10px; height: 10px; cursor: ne-resize; }
+  .frame-controls .fsh-bl { bottom: -6px; left: -6px;  width: 10px; height: 10px; cursor: sw-resize; }
+  .frame-controls .fsh-br { bottom: -6px; right: -6px; width: 10px; height: 10px; cursor: se-resize; }
 
   .shape-outline {
     position: absolute;
@@ -291,17 +310,8 @@
   }
 
   .cell-label {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    font-size: 9px;
-    font-weight: 600;
-    color: rgba(255,255,255,0.08);
-    z-index: 11;
-    pointer-events: none;
+    display: none;
   }
-
-  .cell.selected .cell-label { color: rgba(90,90,255,0.25); }
 
   .hint {
     font-size: 11px;
@@ -512,6 +522,70 @@
   .rs-icon-btn:hover { background: #222228; border-color: #444; color: #ddd; }
   .rs-icon-btn.active { background: #252540; border-color: #5a5aff; color: #c0c0ff; }
 
+  /* Shape tool buttons */
+  .rs-shape-row {
+    display: flex;
+    gap: 6px;
+  }
+  .rs-shape-btn {
+    font-family: inherit;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid #2a2a30;
+    border-radius: 5px;
+    background: #18181c;
+    color: #999;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .rs-shape-btn:hover { background: #222228; border-color: #444; color: #ddd; }
+  .rs-shape-btn.active { background: #252540; border-color: #5a5aff; color: #c0c0ff; }
+
+  /* Shape draw mode cursor */
+  .canvas-area.shape-draw-mode {
+    cursor: crosshair;
+  }
+  .canvas-area.shape-draw-mode .cell {
+    pointer-events: none;
+  }
+  .canvas-area.shape-draw-mode .frame-controls {
+    pointer-events: none;
+    display: none !important;
+  }
+  .canvas-area.shape-draw-mode .text-box {
+    pointer-events: none;
+  }
+
+  /* Shape draw preview container */
+  .shape-create-preview {
+    position: absolute;
+    pointer-events: none;
+    z-index: 200;
+    overflow: visible;
+  }
+  /* Rectangle preview (square / no shape) */
+  .shape-create-preview.rect-preview {
+    border: 1.5px dashed rgba(90, 90, 255, 0.7);
+    background: rgba(90, 90, 255, 0.06);
+  }
+  /* SVG shape preview */
+  .shape-create-preview svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: visible;
+  }
+  .shape-create-preview svg .preview-path {
+    fill: rgba(90, 90, 255, 0.06);
+    stroke: rgba(90, 90, 255, 0.7);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 3;
+  }
+
   /* Color picker area */
   .rs-color-swatches {
     display: flex;
@@ -643,6 +717,10 @@
   .canvas-area.text-place-mode .cell {
     pointer-events: none;
   }
+  .canvas-area.text-place-mode .frame-controls {
+    pointer-events: none;
+    display: none !important;
+  }
   .canvas-area.text-place-mode .text-box {
     pointer-events: none;
   }
@@ -728,6 +806,24 @@
     </button>
   </div>
 
+  <div class="rs-section">
+    <div class="rs-section-title">Add Frame</div>
+    <div class="rs-row rs-shape-row">
+      <button class="rs-shape-btn" id="shapeSquare" data-shape="square" title="Rectangle">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18"/></svg>
+      </button>
+      <button class="rs-shape-btn" id="shapeRounded" data-shape="roundedSquare" title="Rounded Rectangle">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/></svg>
+      </button>
+      <button class="rs-shape-btn" id="shapeCircle" data-shape="circle" title="Circle">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg>
+      </button>
+      <button class="rs-shape-btn" id="shapeHexagon" data-shape="hexagon" title="Hexagon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12,2 22,7.5 22,16.5 12,22 2,16.5 2,7.5"/></svg>
+      </button>
+    </div>
+  </div>
+
   <div class="rs-section rs-text-format-section" id="textFormatSection">
     <div class="rs-section-title">Text Format</div>
 
@@ -773,6 +869,21 @@
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 const SHAPES = {
+  // Drawable shapes (available in the Add Frame tool)
+  square: null, // null shape = rectangle (no clip-path)
+  roundedSquare: {
+    viewBox: '0 0 100 100',
+    path: 'M16 0 L84 0 Q100 0 100 16 L100 84 Q100 100 84 100 L16 100 Q0 100 0 84 L0 16 Q0 0 16 0 Z'
+  },
+  circle: {
+    viewBox: '0 0 100 100',
+    path: 'M50 0 C77.6 0 100 22.4 100 50 C100 77.6 77.6 100 50 100 C22.4 100 0 77.6 0 50 C0 22.4 22.4 0 50 0 Z'
+  },
+  hexagon: {
+    viewBox: '0 0 100 87',
+    path: 'M25 0 L75 0 L100 43.5 L75 87 L25 87 L0 43.5 Z'
+  },
+  // Organic shapes (used in templates)
   amoeba: {
     viewBox: '0 0 120 80',
     path: 'M60 6 C78 4 95 12 104 24 C112 36 108 48 98 56 C90 62 78 64 68 68 C58 72 48 74 38 70 C28 66 18 60 12 50 C6 40 4 28 12 18 C20 8 38 8 60 6 Z'
@@ -979,6 +1090,13 @@ let swapping = false, swapSourceIdx = -1, swapTargetIdx = -1;
 let resizing = false, resizeCellIdx = -1;
 let resizeHandle = '', resizeStartX, resizeStartY, resizeStartScale, resizeStartPosX, resizeStartPosY;
 
+// Frame stretch state (edge/corner drag to resize frame dimensions)
+let frameStretching = false;
+let frameStretchSide = '';
+let frameStretchStartX = 0, frameStretchStartY = 0;
+let frameStretchStartStates = null; // Map of idx -> { x, y, w, h, scale, posX, posY }
+let frameStretchStartTextStates = null; // Map of tbId -> { x, y, width }
+
 // Frame-level dragging (default click+drag)
 let frameDragging = false, frameDragIdx = -1;
 let frameDragStartX, frameDragStartY;
@@ -1012,6 +1130,14 @@ let multiFrameDragStartPositions = null; // Map of ci -> { x, y }
 // Controls how close (in pixels) an object center must be to another
 // object's center before it snaps into alignment.
 const ALIGNMENT_CLICK_PIXELS = 5;
+
+// Controls how close (in pixels) a stretched edge must be to another
+// object's edge before it snaps into alignment.
+const ALIGNMENT_STRETCH_CLICK_PIXELS = 5;
+
+// Controls how close (in pixels) a frame's width must be to its height
+// before it snaps to square proportions during stretching.
+const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 5;
 
 let activeGuideHs = []; // horizontal guide line DOM elements
 let activeGuideVs = []; // vertical guide line DOM elements
@@ -1190,6 +1316,7 @@ function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
       cfg.y = newY;
       s.el.style.left = cfg.x + 'px';
       s.el.style.top = cfg.y + 'px';
+      syncFrameControls(s);
     });
   }
   if (textStartPositions) {
@@ -1206,6 +1333,178 @@ function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
       tb.el.style.top = newY + 'px';
     });
   }
+}
+
+// ===================== STRETCH EDGE ALIGNMENT =====================
+// Get the 4 edges (top, bottom, left, right) of all non-dragged objects as snap targets.
+function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
+  const hEdges = []; // horizontal edges (y values): top and bottom of objects
+  const vEdges = []; // vertical edges (x values): left and right of objects
+
+  // Canvas edges
+  hEdges.push(0, CANVAS_H);
+  vEdges.push(0, CANVAS_W);
+
+  cells.forEach((s, idx) => {
+    if (excludeFrameIndices.has(idx)) return;
+    hEdges.push(s.cfg.y, s.cfg.y + s.cfg.h);
+    vEdges.push(s.cfg.x, s.cfg.x + s.cfg.w);
+  });
+
+  const tbs = getTextBoxes();
+  tbs.forEach(tb => {
+    if (excludeTextBoxIds.has(tb.id)) return;
+    const w = tb.width || tb.contentEl.offsetWidth;
+    const h = tb.contentEl.offsetHeight;
+    hEdges.push(tb.y, tb.y + h);
+    vEdges.push(tb.x, tb.x + w);
+  });
+
+  return { hEdges, vEdges };
+}
+
+// Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
+// each stretched object's active edges against all target edges.
+// Returns { dx, dy } with snap corrections applied.
+function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds) {
+  const { hEdges, vEdges } = getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds);
+
+  // Determine which axes can snap based on the handle side
+  const canSnapX = side.includes('l') || side.includes('r');
+  const canSnapY = side.includes('t') || side.includes('b');
+
+  let bestDxCorrection = null, bestDxDist = Infinity;
+  let bestDyCorrection = null, bestDyDist = Infinity;
+
+  // Check each stretched frame's active edges
+  if (stretchStartStates) {
+    stretchStartStates.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+
+      // Compute projected geometry with raw delta
+      let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
+      if (side === 'r') { newW = start.w + rawDx; }
+      else if (side === 'l') { newW = start.w - rawDx; newX = start.x + rawDx; }
+      else if (side === 'b') { newH = start.h + rawDy; }
+      else if (side === 't') { newH = start.h - rawDy; newY = start.y + rawDy; }
+      else if (side === 'br') { newW = start.w + rawDx; newH = start.h + rawDy; }
+      else if (side === 'bl') { newW = start.w - rawDx; newH = start.h + rawDy; newX = start.x + rawDx; }
+      else if (side === 'tr') { newW = start.w + rawDx; newH = start.h - rawDy; newY = start.y + rawDy; }
+      else if (side === 'tl') { newW = start.w - rawDx; newH = start.h - rawDy; newX = start.x + rawDx; newY = start.y + rawDy; }
+
+      // Check vertical edges (left/right of object → snap dx)
+      if (canSnapX) {
+        const activeXEdge = side.includes('r') ? newX + newW : newX;
+        for (const ve of vEdges) {
+          const dist = Math.abs(activeXEdge - ve);
+          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist) {
+            bestDxDist = dist;
+            bestDxCorrection = ve - activeXEdge;
+          }
+        }
+      }
+
+      // Check horizontal edges (top/bottom of object → snap dy)
+      if (canSnapY) {
+        const activeYEdge = side.includes('b') ? newY + newH : newY;
+        for (const he of hEdges) {
+          const dist = Math.abs(activeYEdge - he);
+          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDyDist) {
+            bestDyDist = dist;
+            bestDyCorrection = he - activeYEdge;
+          }
+        }
+      }
+    });
+  }
+
+  // Also check stretched text boxes
+  if (stretchStartTextStates && canSnapX) {
+    stretchStartTextStates.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      if (side.includes('r') || side.includes('l')) {
+        const widthDelta = side.includes('r') ? rawDx : -rawDx;
+        const newW = Math.max(20, start.width + widthDelta);
+        const activeXEdge = side.includes('r') ? start.x + newW : start.x - (newW - start.width);
+        for (const ve of vEdges) {
+          const dist = Math.abs(activeXEdge - ve);
+          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist) {
+            bestDxDist = dist;
+            bestDxCorrection = ve - activeXEdge;
+          }
+        }
+      }
+    });
+  }
+
+  // Apply corrections to raw deltas
+  let snapDx = rawDx, snapDy = rawDy;
+  if (bestDxCorrection !== null) {
+    // The correction adjusts the active edge position. For side 'r', adding to dx
+    // moves the right edge right. For side 'l', dx is inverted in the geometry calc,
+    // so we still add the correction directly to rawDx.
+    snapDx = rawDx + bestDxCorrection;
+  }
+  if (bestDyCorrection !== null) {
+    snapDy = rawDy + bestDyCorrection;
+  }
+
+  // Now compute all active edges at snapped deltas to show guide lines
+  const guideHSet = new Set();
+  const guideVSet = new Set();
+
+  if (stretchStartStates) {
+    stretchStartStates.forEach((start, idx) => {
+      let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
+      if (side === 'r') { newW = start.w + snapDx; }
+      else if (side === 'l') { newW = start.w - snapDx; newX = start.x + snapDx; }
+      else if (side === 'b') { newH = start.h + snapDy; }
+      else if (side === 't') { newH = start.h - snapDy; newY = start.y + snapDy; }
+      else if (side === 'br') { newW = start.w + snapDx; newH = start.h + snapDy; }
+      else if (side === 'bl') { newW = start.w - snapDx; newH = start.h + snapDy; newX = start.x + snapDx; }
+      else if (side === 'tr') { newW = start.w + snapDx; newH = start.h - snapDy; newY = start.y + snapDy; }
+      else if (side === 'tl') { newW = start.w - snapDx; newH = start.h - snapDy; newX = start.x + snapDx; newY = start.y + snapDy; }
+
+      if (canSnapX) {
+        const activeXEdge = side.includes('r') ? newX + newW : newX;
+        for (const ve of vEdges) {
+          if (Math.abs(activeXEdge - ve) < 0.5) guideVSet.add(Math.round(ve));
+        }
+      }
+      if (canSnapY) {
+        const activeYEdge = side.includes('b') ? newY + newH : newY;
+        for (const he of hEdges) {
+          if (Math.abs(activeYEdge - he) < 0.5) guideHSet.add(Math.round(he));
+        }
+      }
+    });
+  }
+
+  // Show/hide guides
+  const guideHArr = [...guideHSet];
+  const guideVArr = [...guideVSet];
+
+  guideHArr.forEach((y, i) => {
+    const g = ensureGuideH(i);
+    g.style.top = y + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideHArr.length; i < activeGuideHs.length; i++) {
+    activeGuideHs[i].style.display = 'none';
+  }
+
+  guideVArr.forEach((x, i) => {
+    const g = ensureGuideV(i);
+    g.style.left = x + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideVArr.length; i < activeGuideVs.length; i++) {
+    activeGuideVs[i].style.display = 'none';
+  }
+
+  return { dx: snapDx, dy: snapDy };
 }
 
 // DOM refs
@@ -1273,7 +1572,10 @@ function switchTemplate(idx) {
       applyBgTransform(state);
     }
   }
-  cells.forEach(s => canvasArea.appendChild(s.el));
+  cells.forEach(s => {
+    canvasArea.appendChild(s.el);
+    canvasArea.appendChild(s.controlsEl);
+  });
 
   // Update lock toggle visual state
   updateBgLockUI();
@@ -1281,6 +1583,7 @@ function switchTemplate(idx) {
   // Re-apply selection highlight
   cells.forEach((s, i) => {
     s.el.classList.toggle('selected', selectedIndices.has(i));
+    s.controlsEl.classList.toggle('visible', selectedIndices.has(i));
   });
 
   updateLabel();
@@ -1298,6 +1601,7 @@ function cancelInteractions() {
   bgDragging = false;
   swapping = false; swapSourceIdx = -1; swapTargetIdx = -1;
   resizing = false; resizeCellIdx = -1;
+  frameStretching = false; frameStretchStartStates = null; frameStretchStartTextStates = null;
   
   duplicating = false; 
   dupSourceIdx = -1; 
@@ -1368,15 +1672,28 @@ function createCell(state, tmpl, cfg, i) {
   const img = document.createElement('img');
   cell.appendChild(img);
 
-  ['tl', 'tr', 'bl', 'br'].forEach(corner => {
+  // Frame controls overlay (separate from cell to avoid clip-path clipping)
+  const controlsEl = document.createElement('div');
+  controlsEl.className = 'frame-controls';
+  controlsEl.style.left = cfg.x + 'px';
+  controlsEl.style.top = cfg.y + 'px';
+  controlsEl.style.width = cfg.w + 'px';
+  controlsEl.style.height = cfg.h + 'px';
+
+  const frameBorder = document.createElement('div');
+  frameBorder.className = 'frame-border';
+  controlsEl.appendChild(frameBorder);
+
+  ['l', 'r', 't', 'b', 'tl', 'tr', 'bl', 'br'].forEach(side => {
     const h = document.createElement('div');
-    h.className = `handle handle-${corner}`;
-    h.dataset.handle = corner;
-    cell.appendChild(h);
+    h.className = `frame-stretch-handle fsh-${side}`;
+    h.dataset.fshside = side;
+    controlsEl.appendChild(h);
   });
 
   const cellState = {
     el: cell,
+    controlsEl: controlsEl,
     img: img,
     fileInput: fileInput,
     upload: upload,
@@ -1501,19 +1818,6 @@ function createCell(state, tmpl, cfg, i) {
     }
     cellState.lastClickTime = now;
 
-    if (e.target.classList.contains('handle') && cellState.loaded) {
-      e.stopPropagation();
-      resizing = true;
-      resizeCellIdx = ci;
-      resizeHandle = e.target.dataset.handle;
-      resizeStartX = e.clientX;
-      resizeStartY = e.clientY;
-      resizeStartScale = cellState.scale;
-      resizeStartPosX = cellState.posX;
-      resizeStartPosY = cellState.posY;
-      return;
-    }
-
     // Default click+drag: start frame dragging for ALL selected frames AND text boxes
     {
       e.preventDefault();
@@ -1604,6 +1908,7 @@ function createCell(state, tmpl, cfg, i) {
       s.el.style.height = cfg.h + 'px';
 
       updateFrameShape(s);
+      syncFrameControls(s);
 
       if (s.loaded) {
         const ratio = newW / oldW;
@@ -1616,6 +1921,39 @@ function createCell(state, tmpl, cfg, i) {
 
     updateLabel();
   }, { passive: false });
+
+  // Stretch handle mousedown on the controls overlay (outside clip-path)
+  controlsEl.addEventListener('mousedown', (e) => {
+    if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
+    const stretchHandleEl = e.target.closest('.frame-stretch-handle');
+    if (!stretchHandleEl) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    frameStretching = true;
+    frameStretchSide = stretchHandleEl.dataset.fshside;
+    frameStretchStartX = e.clientX;
+    frameStretchStartY = e.clientY;
+
+    frameStretchStartStates = new Map();
+    selectedIndices.forEach(idx => {
+      const s = cells[idx];
+      if (!s) return;
+      frameStretchStartStates.set(idx, {
+        x: s.cfg.x, y: s.cfg.y, w: s.cfg.w, h: s.cfg.h,
+        scale: s.scale, posX: s.posX, posY: s.posY
+      });
+    });
+
+    frameStretchStartTextStates = new Map();
+    selectedTextBoxIds.forEach(tbId => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      frameStretchStartTextStates.set(tbId, {
+        x: tb.x, y: tb.y, width: tb.width || tb.contentEl.offsetWidth
+      });
+    });
+  });
 
   return cellState;
 }
@@ -1695,6 +2033,7 @@ function duplicateCell(sourceIdx, newX, newY) {
 
   // Add to the DOM
   canvasArea.appendChild(newCell.el);
+  canvasArea.appendChild(newCell.controlsEl);
 
   // Update the global cells reference
   cells = state.cells;
@@ -1812,6 +2151,7 @@ function selectCellFor(state, i) {
   deselectAll();
   state.selectedIndices.add(i);
   state.cells[i].el.classList.add('selected');
+  state.cells[i].controlsEl.classList.add('visible');
   selectedIndices = state.selectedIndices;
   updateLabel();
 }
@@ -1821,6 +2161,7 @@ function selectMultiple(state, indices) {
   indices.forEach(i => {
     state.selectedIndices.add(i);
     state.cells[i].el.classList.add('selected');
+    state.cells[i].controlsEl.classList.add('visible');
   });
   selectedIndices = state.selectedIndices;
   updateLabel();
@@ -1830,11 +2171,31 @@ function deselectAll() {
   const state = templateStates[activeTemplateIndex];
   if (!state) return;
   state.selectedIndices.forEach(i => {
-    if (state.cells[i]) state.cells[i].el.classList.remove('selected');
+    if (state.cells[i]) {
+      state.cells[i].el.classList.remove('selected');
+      state.cells[i].controlsEl.classList.remove('visible');
+    }
   });
   state.selectedIndices.clear();
   selectedIndices = state.selectedIndices;
   updateLabel();
+}
+
+// Sync a single frame's controls overlay position/size with its cell cfg
+function syncFrameControls(cellState) {
+  const cfg = cellState.cfg;
+  const c = cellState.controlsEl;
+  c.style.left = cfg.x + 'px';
+  c.style.top = cfg.y + 'px';
+  c.style.width = cfg.w + 'px';
+  c.style.height = cfg.h + 'px';
+}
+
+// Sync controls for ALL currently selected frames
+function syncAllSelectedControls() {
+  selectedIndices.forEach(idx => {
+    if (cells[idx]) syncFrameControls(cells[idx]);
+  });
 }
 
 function updateLabel() {
@@ -2040,6 +2401,7 @@ window.addEventListener('keydown', (e) => {
     selected.forEach(cellIdx => {
       const s = cells[cellIdx];
       s.el.remove();
+      s.controlsEl.remove();
       state.cells.splice(cellIdx, 1);
       tmpl.frames.splice(cellIdx, 1); // Keep template config in sync for accurate export
     });
@@ -2134,6 +2496,7 @@ window.addEventListener('mousemove', (e) => {
       dupCloneIndices.forEach(cloneIdx => {
          state.selectedIndices.add(cloneIdx);
          cells[cloneIdx].el.classList.add('selected', 'dragging');
+         cells[cloneIdx].controlsEl.classList.add('visible');
       });
       selectedIndices = state.selectedIndices;
       dupTextBoxCloneIds.forEach(cloneId => {
@@ -2151,32 +2514,116 @@ window.addEventListener('mousemove', (e) => {
     }
   }
 
-  if (resizing && resizeCellIdx >= 0 && !swapping) {
-    const s = cells[resizeCellIdx];
-    const dx = e.clientX - resizeStartX;
-    const dy = e.clientY - resizeStartY;
-    let dist;
-    if (resizeHandle === 'br') dist = Math.max(dx, dy);
-    else if (resizeHandle === 'bl') dist = Math.max(-dx, dy);
-    else if (resizeHandle === 'tr') dist = Math.max(dx, -dy);
-    else dist = Math.max(-dx, -dy);
+  // Frame stretching (edge/corner drag to change frame dimensions)
+  if (frameStretching && frameStretchStartStates) {
+    const rawDx = e.clientX - frameStretchStartX;
+    const rawDy = e.clientY - frameStretchStartY;
+    const side = frameStretchSide;
 
-    s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, resizeStartScale + dist * 0.005));
+    // Compute snapped dx/dy with edge alignment
+    const excludeFrames = new Set(frameStretchStartStates.keys());
+    const excludeText = frameStretchStartTextStates ? new Set(frameStretchStartTextStates.keys()) : new Set();
+    const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText);
 
-    if (resizeHandle === 'tl') {
-      s.posX = (resizeStartPosX + s.naturalW * resizeStartScale) - s.naturalW * s.scale;
-      s.posY = (resizeStartPosY + s.naturalH * resizeStartScale) - s.naturalH * s.scale;
-    } else if (resizeHandle === 'tr') {
-      s.posX = resizeStartPosX;
-      s.posY = (resizeStartPosY + s.naturalH * resizeStartScale) - s.naturalH * s.scale;
-    } else if (resizeHandle === 'bl') {
-      s.posX = (resizeStartPosX + s.naturalW * resizeStartScale) - s.naturalW * s.scale;
-      s.posY = resizeStartPosY;
-    } else {
-      s.posX = resizeStartPosX;
-      s.posY = resizeStartPosY;
+    // Apply stretch to all selected frames
+    frameStretchStartStates.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      const cfg = s.cfg;
+
+      let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
+
+      // Compute new dimensions based on which handle is being dragged
+      if (side === 'r') { newW = start.w + dx; }
+      else if (side === 'l') { newW = start.w - dx; newX = start.x + dx; }
+      else if (side === 'b') { newH = start.h + dy; }
+      else if (side === 't') { newH = start.h - dy; newY = start.y + dy; }
+      else if (side === 'br') { newW = start.w + dx; newH = start.h + dy; }
+      else if (side === 'bl') { newW = start.w - dx; newH = start.h + dy; newX = start.x + dx; }
+      else if (side === 'tr') { newW = start.w + dx; newH = start.h - dy; newY = start.y + dy; }
+      else if (side === 'tl') { newW = start.w - dx; newH = start.h - dy; newX = start.x + dx; newY = start.y + dy; }
+
+      // Enforce minimum size
+      if (newW < 30) { newW = 30; if (side.includes('l')) newX = start.x + start.w - 30; }
+      if (newH < 30) { newH = 30; if (side.includes('t')) newY = start.y + start.h - 30; }
+
+      // Per-frame square proportion snap: if w ≈ h, snap to square
+      if (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30) {
+        // Snap the actively-stretched dimension to match the other
+        if (side === 'l' || side === 'r') {
+          // Stretching horizontally: snap width to height
+          const diff = newH - newW;
+          newW = newH;
+          if (side === 'l') newX -= diff;
+        } else if (side === 't' || side === 'b') {
+          // Stretching vertically: snap height to width
+          const diff = newW - newH;
+          newH = newW;
+          if (side === 't') newY -= diff;
+        } else {
+          // Corner handle: snap the dimension that's closer to the other
+          // Use the larger dimension as the target
+          const target = Math.max(newW, newH);
+          if (newW < target) {
+            const diff = target - newW;
+            newW = target;
+            if (side.includes('l')) newX -= diff;
+          }
+          if (newH < target) {
+            const diff = target - newH;
+            newH = target;
+            if (side.includes('t')) newY -= diff;
+          }
+        }
+      }
+
+      // Clamp to canvas
+      newX = Math.max(0, newX);
+      newY = Math.max(0, newY);
+      if (newX + newW > CANVAS_W) newW = CANVAS_W - newX;
+      if (newY + newH > CANVAS_H) newH = CANVAS_H - newY;
+
+      cfg.x = newX; cfg.y = newY; cfg.w = newW; cfg.h = newH;
+      s.el.style.left = cfg.x + 'px';
+      s.el.style.top = cfg.y + 'px';
+      s.el.style.width = cfg.w + 'px';
+      s.el.style.height = cfg.h + 'px';
+
+      updateFrameShape(s);
+      syncFrameControls(s);
+
+      // Scale image proportionally: use the larger scale factor to ensure coverage
+      if (s.loaded) {
+        const scaleRatioW = newW / start.w;
+        const scaleRatioH = newH / start.h;
+        const ratio = Math.max(scaleRatioW, scaleRatioH);
+        s.scale = start.scale * ratio;
+        s.posX = start.posX * scaleRatioW;
+        s.posY = start.posY * scaleRatioH;
+        applyTransform(idx);
+      }
+    });
+
+    // Apply stretch to all selected text boxes (horizontal width only)
+    if (frameStretchStartTextStates) {
+      frameStretchStartTextStates.forEach((start, tbId) => {
+        const tb = getTextBoxById(tbId);
+        if (!tb) return;
+
+        if (side === 'l' || side === 'r' || side === 'tl' || side === 'tr' || side === 'bl' || side === 'br') {
+          const widthDelta = (side.includes('r') ? dx : -dx);
+          const newW = Math.max(20, start.width + widthDelta);
+          tb.width = newW;
+          tb.contentEl.style.width = newW + 'px';
+          if (side.includes('l')) {
+            tb.x = start.x - (newW - start.width);
+            tb.el.style.left = tb.x + 'px';
+          }
+        }
+      });
     }
-    applyTransform(resizeCellIdx);
+
+    updateLabel();
   }
 
   // Background dragging (when unlocked)
@@ -2256,11 +2703,17 @@ window.addEventListener('mouseup', (e) => {
         if (selectedIndices.has(dupSourceIdx)) {
           // Already selected → deselect it
           selectedIndices.delete(dupSourceIdx);
-          if (cells[dupSourceIdx]) cells[dupSourceIdx].el.classList.remove('selected');
+          if (cells[dupSourceIdx]) {
+            cells[dupSourceIdx].el.classList.remove('selected');
+            cells[dupSourceIdx].controlsEl.classList.remove('visible');
+          }
         } else {
           // Not selected → add to selection
           selectedIndices.add(dupSourceIdx);
-          if (cells[dupSourceIdx]) cells[dupSourceIdx].el.classList.add('selected');
+          if (cells[dupSourceIdx]) {
+            cells[dupSourceIdx].el.classList.add('selected');
+            cells[dupSourceIdx].controlsEl.classList.add('visible');
+          }
         }
         updateLabel();
       }
@@ -2278,6 +2731,13 @@ window.addEventListener('mouseup', (e) => {
   if (bgDragging) canvasArea.classList.remove('bg-dragging');
   bgDragging = false;
   resizing = false; resizeCellIdx = -1;
+
+  if (frameStretching) {
+    frameStretching = false;
+    frameStretchSide = '';
+    frameStretchStartStates = null;
+    frameStretchStartTextStates = null;
+  }
 
   // Finalize marquee selection
   if (marqueeActive && marqueeEl) {
@@ -3232,20 +3692,195 @@ document.getElementById('textToolBtn').addEventListener('click', () => {
   if (textPlaceMode) {
     exitTextPlaceMode();
   } else {
+    exitShapeDrawMode(); // exit shape mode if active
     enterTextPlaceMode();
   }
 });
 
-// Escape exits text editing and deselects everything
+// ===================== SHAPE DRAW MODE =====================
+let shapeDrawMode = false;
+let shapeDrawType = null; // 'square', 'roundedSquare', 'circle', 'hexagon'
+let shapeCreateDragging = false;
+let shapeCreateStartX = 0, shapeCreateStartY = 0;
+let shapeCreatePreviewEl = null;
+
+function enterShapeDrawMode(shapeType) {
+  exitTextPlaceMode(); // exit text mode if active
+  shapeDrawMode = true;
+  shapeDrawType = shapeType;
+  canvasArea.classList.add('shape-draw-mode');
+  // Highlight the active shape button
+  document.querySelectorAll('.rs-shape-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.rs-shape-btn[data-shape="${shapeType}"]`);
+  if (btn) btn.classList.add('active');
+}
+
+function exitShapeDrawMode() {
+  shapeDrawMode = false;
+  shapeDrawType = null;
+  canvasArea.classList.remove('shape-draw-mode');
+  document.querySelectorAll('.rs-shape-btn').forEach(b => b.classList.remove('active'));
+}
+
+// Shape button click handlers
+document.querySelectorAll('.rs-shape-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const shape = btn.dataset.shape;
+    if (shapeDrawMode && shapeDrawType === shape) {
+      exitShapeDrawMode();
+    } else {
+      enterShapeDrawMode(shape);
+    }
+  });
+});
+
+// Canvas mousedown for shape draw (capture phase, before other handlers)
+canvasArea.addEventListener('mousedown', (e) => {
+  if (!shapeDrawMode) return;
+  if (e.target.closest('.text-box')) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const rect = canvasArea.getBoundingClientRect();
+  shapeCreateStartX = e.clientX - rect.left;
+  shapeCreateStartY = e.clientY - rect.top;
+  shapeCreateDragging = true;
+
+  shapeCreatePreviewEl = document.createElement('div');
+  shapeCreatePreviewEl.className = 'shape-create-preview';
+  // For square (null shape), use a simple rect preview; for others, use SVG
+  const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
+  if (!shapeKey) {
+    shapeCreatePreviewEl.classList.add('rect-preview');
+  }
+  shapeCreatePreviewEl.style.left = shapeCreateStartX + 'px';
+  shapeCreatePreviewEl.style.top = shapeCreateStartY + 'px';
+  shapeCreatePreviewEl.style.width = '0px';
+  shapeCreatePreviewEl.style.height = '0px';
+  canvasArea.appendChild(shapeCreatePreviewEl);
+
+  deselectAll();
+}, true);
+
+// Helper: compute draw rect, optionally constraining to square proportions
+function getShapeDrawRect(startX, startY, curX, curY, constrain) {
+  let width = Math.abs(curX - startX);
+  let height = Math.abs(curY - startY);
+
+  if (constrain) {
+    const size = Math.max(width, height);
+    width = size;
+    height = size;
+  }
+
+  const left = curX >= startX ? startX : startX - width;
+  const top = curY >= startY ? startY : startY - height;
+
+  return { left, top, width, height };
+}
+
+// Mousemove: update shape draw preview with actual shape
+window.addEventListener('mousemove', (e) => {
+  if (!shapeCreateDragging || !shapeCreatePreviewEl) return;
+
+  const rect = canvasArea.getBoundingClientRect();
+  const currentX = e.clientX - rect.left;
+  const currentY = e.clientY - rect.top;
+
+  const { left, top, width, height } = getShapeDrawRect(
+    shapeCreateStartX, shapeCreateStartY, currentX, currentY, e.shiftKey
+  );
+
+  shapeCreatePreviewEl.style.left = left + 'px';
+  shapeCreatePreviewEl.style.top = top + 'px';
+  shapeCreatePreviewEl.style.width = width + 'px';
+  shapeCreatePreviewEl.style.height = height + 'px';
+
+  // Update SVG shape preview for non-square shapes
+  const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
+  if (shapeKey && width > 0 && height > 0) {
+    const shapeDef = SHAPES[shapeKey];
+    if (shapeDef) {
+      const sp = scalePath(shapeDef.path, shapeDef.viewBox, width, height);
+      shapeCreatePreviewEl.innerHTML = `<svg viewBox="0 0 ${width} ${height}"><path class="preview-path" d="${sp}"/></svg>`;
+    }
+  }
+});
+
+// Mouseup: create the frame
+window.addEventListener('mouseup', (e) => {
+  if (!shapeCreateDragging) return;
+  shapeCreateDragging = false;
+
+  if (shapeCreatePreviewEl) {
+    shapeCreatePreviewEl.remove();
+    shapeCreatePreviewEl = null;
+  }
+
+  const rect = canvasArea.getBoundingClientRect();
+  const endX = e.clientX - rect.left;
+  const endY = e.clientY - rect.top;
+
+  const { left: x, top: y, width: w, height: h } = getShapeDrawRect(
+    shapeCreateStartX, shapeCreateStartY, endX, endY, e.shiftKey
+  );
+
+  const MIN_SIZE = 20;
+  if (w < MIN_SIZE || h < MIN_SIZE) {
+    exitShapeDrawMode();
+    return;
+  }
+
+  // Clamp to canvas
+  const finalX = Math.max(0, x);
+  const finalY = Math.max(0, y);
+  const finalW = Math.min(w, CANVAS_W - finalX);
+  const finalH = Math.min(h, CANVAS_H - finalY);
+
+  // Build frame config
+  const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
+  const newCfg = {
+    x: finalX,
+    y: finalY,
+    w: finalW,
+    h: finalH,
+    shape: shapeKey,
+    label: shapeDrawType,
+  };
+
+  const state = templateStates[activeTemplateIndex];
+  const tmpl = TEMPLATES[activeTemplateIndex];
+  tmpl.frames.push(newCfg);
+
+  const newIdx = state.cells.length;
+  const newCell = createCell(state, tmpl, newCfg, newIdx);
+  state.cells.push(newCell);
+  cells = state.cells;
+
+  canvasArea.appendChild(newCell.el);
+  canvasArea.appendChild(newCell.controlsEl);
+
+  // Select the new frame and exit draw mode
+  selectCellFor(state, newIdx);
+  exitShapeDrawMode();
+});
+
+// Escape exits shape draw mode
+// (patched into the existing Escape handler below)
+
+// Escape exits text editing, shape draw mode, and deselects everything
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (activeTextBoxId) {
       finalizeTextBox(activeTextBoxId);
-      // finalizeTextBox already calls deselectAll and exitTextPlaceMode
       return;
     }
     if (textPlaceMode) {
       exitTextPlaceMode();
+    }
+    if (shapeDrawMode) {
+      exitShapeDrawMode();
     }
     // Always deselect everything on Escape
     deselectAll();
@@ -3610,6 +4245,7 @@ switchTemplate = function(idx) {
   if (activeTextBoxId) finalizeTextBox(activeTextBoxId);
   deselectAllTextBoxes();
   exitTextPlaceMode();
+  exitShapeDrawMode();
   removeGuideEls();
 
   _origSwitchTemplate(idx);
