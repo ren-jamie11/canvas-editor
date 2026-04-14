@@ -198,9 +198,9 @@
     background: rgba(32, 201, 151, 0.15) !important;
   }
 
-  .cell.has-image { cursor: grab; }
-  .cell.has-image.dragging { cursor: grabbing; }
-  .cell.has-image.swapping { cursor: grabbing; }
+  .cell { cursor: grab; }
+  .cell.dragging { cursor: grabbing; }
+  .cell.swapping { cursor: grabbing; }
 
   .cell-upload {
     position: absolute;
@@ -210,7 +210,8 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    cursor: pointer;
+    cursor: grab;
+    pointer-events: none;
     z-index: 2;
     transition: background 0.15s;
   }
@@ -707,8 +708,8 @@
 
   <div class="hint">
     Click frame to select · <b>Ctrl+Click</b> to multi-select · <b>Drag on canvas</b> to box-select · <b>Delete</b> to remove<br/>
-    Drag to pan image · Scroll selected to zoom · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
-    <b>Shift+Drag</b> to move frames · <b>Shift+Scroll</b> to resize frames · <b>Ctrl+Drag</b> to duplicate<br/>
+    Drag to move frames · Scroll to resize frames · <b>Double-click empty frame</b> to upload · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
+    <b>Shift+Drag</b> to pan image · <b>Shift+Scroll</b> to zoom image · <b>Ctrl+Drag</b> to duplicate<br/>
     <b>T tool</b>: click canvas to place text · <b>Double-click</b> text to edit · <b>Scroll</b> selected text to resize<br/>
     Unlock background to drag &amp; scroll-zoom the background image
   </div>
@@ -890,6 +891,7 @@ document.documentElement.style.setProperty('--selection-border-width-num', SELEC
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 10;
 const ZOOM_STEP = 0.08;
+const IMAGE_RESIZE_SCROLL_TICK = 0.03;
 
 // ===================== SVG PATH SCALER =====================
 function scalePath(pathStr, viewBox, frameW, frameH) {
@@ -977,7 +979,7 @@ let swapping = false, swapSourceIdx = -1, swapTargetIdx = -1;
 let resizing = false, resizeCellIdx = -1;
 let resizeHandle = '', resizeStartX, resizeStartY, resizeStartScale, resizeStartPosX, resizeStartPosY;
 
-// Frame-level dragging (Shift+click+drag)
+// Frame-level dragging (default click+drag)
 let frameDragging = false, frameDragIdx = -1;
 let frameDragStartX, frameDragStartY;
 
@@ -1394,15 +1396,16 @@ function createCell(state, tmpl, cfg, i) {
   // ---- Event handlers (they capture cellState and state by closure) ----
   // IMPORTANT: All handlers use cellState._cellIndex (not the construction-time i)
   // so that deletion/duplication + re-indexing doesn't break references.
+  // Upload click is now deferred: handled via mouseup to distinguish click from drag.
+  // We suppress the default upload click handler entirely.
   upload.addEventListener('click', (e) => {
-    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
     e.stopPropagation();
-    selectCellFor(state, cellState._cellIndex);
-    fileInput.click();
+    e.preventDefault();
+    // Upload is triggered from mouseup instead (see frameDragging cleanup)
   });
 
   upload.addEventListener('wheel', (e) => {
-    if (e.shiftKey) e.preventDefault();
+    if (!e.shiftKey) e.preventDefault();
   }, { passive: false });
 
   fileInput.addEventListener('change', (e) => {
@@ -1415,14 +1418,7 @@ function createCell(state, tmpl, cfg, i) {
   cell.addEventListener('mousedown', (e) => {
     if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
 
-    if (e.target.closest('.cell-upload') && !e.shiftKey && !e.ctrlKey && !e.metaKey) return;
-
     const ci = cellState._cellIndex;
-
-    if (!cellState.loaded && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-      deselectAll();
-      return;
-    }
 
     // Ctrl/Cmd: enter a pending state — we don't know yet if it's a click
     // (toggle multi-select) or a drag (duplicate multiple). The decision is deferred
@@ -1455,27 +1451,21 @@ function createCell(state, tmpl, cfg, i) {
       selectCellFor(state, ci);
     }
 
-    const isMixedSelection = selectedIndices.has(ci) && selectedTextBoxIds.size > 0;
-
-    // Shift+click OR Mixed Selection: start frame dragging for ALL selected frames
-    if (e.shiftKey || isMixedSelection) {
+    // Shift+click on loaded cell: start image panning (move image inside frame)
+    if (e.shiftKey && cellState.loaded) {
       e.preventDefault();
       e.stopPropagation();
-      frameDragging = true;
-      frameDragIdx = ci;
-      frameDragStartX = e.clientX;
-      frameDragStartY = e.clientY;
-      multiFrameDragStartPositions = new Map();
+      dragging = true;
+      dragCellIdx = ci;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      multiDragStartPositions = new Map();
       selectedIndices.forEach(idx => {
         const s = cells[idx];
-        multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
+        if (s.loaded) {
+          multiDragStartPositions.set(idx, { posX: s.posX, posY: s.posY });
+        }
         s.el.classList.add('dragging');
-      });
-      // Also capture selected text boxes for unified frame-level drag
-      multiTextDragStartPositions = new Map();
-      selectedTextBoxIds.forEach(tbId => {
-        const t = getTextBoxById(tbId);
-        if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
       });
       return;
     }
@@ -1489,7 +1479,19 @@ function createCell(state, tmpl, cfg, i) {
     }
 
     const now = Date.now();
-    if (cellState.loaded && (now - cellState.lastClickTime) < 300) {
+    const isDoubleClick = (now - cellState.lastClickTime) < 300;
+
+    // Double-click on empty frame: open file upload
+    if (!cellState.loaded && isDoubleClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      cellState.lastClickTime = 0;
+      cellState.fileInput.click();
+      return;
+    }
+
+    // Double-click on loaded frame: start swap
+    if (cellState.loaded && isDoubleClick) {
       e.preventDefault();
       swapping = true;
       swapSourceIdx = ci;
@@ -1512,26 +1514,26 @@ function createCell(state, tmpl, cfg, i) {
       return;
     }
 
-    if (cellState.loaded) {
-      dragging = true;
-      dragCellIdx = ci;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      multiDragStartPositions = new Map();
+    // Default click+drag: start frame dragging for ALL selected frames AND text boxes
+    {
+      e.preventDefault();
+      e.stopPropagation();
+      frameDragging = true;
+      frameDragIdx = ci;
+      frameDragStartX = e.clientX;
+      frameDragStartY = e.clientY;
+      multiFrameDragStartPositions = new Map();
       selectedIndices.forEach(idx => {
         const s = cells[idx];
-        if (s.loaded) {
-          multiDragStartPositions.set(idx, { posX: s.posX, posY: s.posY });
-        }
+        multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
         s.el.classList.add('dragging');
       });
-      // Also capture selected text box positions for unified drag
+      // Also capture selected text boxes for unified frame-level drag
       multiTextDragStartPositions = new Map();
       selectedTextBoxIds.forEach(tbId => {
         const t = getTextBoxById(tbId);
         if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
       });
-      e.preventDefault();
     }
   });
 
@@ -1540,74 +1542,79 @@ function createCell(state, tmpl, cfg, i) {
 
     const ci = cellState._cellIndex;
 
-    const hasSelection = selectedIndices.size > 0;
-    const targetIndices = hasSelection ? [...selectedIndices] : [ci];
+    // Scroll actions require the frame to be selected
+    if (!selectedIndices.has(ci)) return;
+
+    const targetIndices = [...selectedIndices];
 
     if (e.shiftKey) {
+      // Shift+scroll: zoom/pan image inside frame
+      if (!cellState.loaded) return;
       e.preventDefault();
-      const delta = e.deltaY > 0 ? -5 : 5;
+
+      const delta = e.deltaY > 0 ? -IMAGE_RESIZE_SCROLL_TICK : IMAGE_RESIZE_SCROLL_TICK;
+
+      const hoveredRect = cell.getBoundingClientRect();
+      const mx = e.clientX - hoveredRect.left;
+      const my = e.clientY - hoveredRect.top;
 
       targetIndices.forEach(idx => {
         const s = cells[idx];
-        if (!s) return;
-        const cfg = s.cfg;
-        const aspect = cfg.w / cfg.h;
-        const newW = cfg.w + delta;
-        const newH = newW / aspect;
+        if (!s || !s.loaded) return;
 
-        if (newW < 30 || newH < 30) return;
-        if (cfg.x + newW > CANVAS_W || cfg.y + newH > CANVAS_H) return;
-        if (newW <= 0 || newH <= 0) return;
+        const oldScale = s.scale;
+        s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s.scale + delta));
 
-        const oldW = cfg.w;
-        cfg.w = newW;
-        cfg.h = newH;
-
-        s.el.style.width = cfg.w + 'px';
-        s.el.style.height = cfg.h + 'px';
-
-        updateFrameShape(s);
-
-        if (s.loaded) {
-          const ratio = newW / oldW;
-          s.posX *= ratio;
-          s.posY *= ratio;
-          s.scale *= ratio;
-          applyTransformFor(state, idx);
+        if (idx === ci) {
+          s.posX = mx - (mx - s.posX) * (s.scale / oldScale);
+          s.posY = my - (my - s.posY) * (s.scale / oldScale);
+        } else {
+          const cx = s.cfg.w / 2;
+          const cy = s.cfg.h / 2;
+          s.posX = cx - (cx - s.posX) * (s.scale / oldScale);
+          s.posY = cy - (cy - s.posY) * (s.scale / oldScale);
         }
-      });
 
-      updateLabel();
+        applyTransformFor(state, idx);
+      });
       return;
     }
 
+    // Default scroll (no shift): resize frame
     e.preventDefault();
-
-    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-
-    const hoveredRect = cell.getBoundingClientRect();
-    const mx = e.clientX - hoveredRect.left;
-    const my = e.clientY - hoveredRect.top;
+    const delta = e.deltaY > 0 ? -5 : 5;
 
     targetIndices.forEach(idx => {
       const s = cells[idx];
-      if (!s || !s.loaded) return;
+      if (!s) return;
+      const cfg = s.cfg;
+      const aspect = cfg.w / cfg.h;
+      const newW = cfg.w + delta;
+      const newH = newW / aspect;
 
-      const oldScale = s.scale;
-      s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s.scale + delta));
+      if (newW < 30 || newH < 30) return;
+      if (cfg.x + newW > CANVAS_W || cfg.y + newH > CANVAS_H) return;
+      if (newW <= 0 || newH <= 0) return;
 
-      if (idx === ci) {
-        s.posX = mx - (mx - s.posX) * (s.scale / oldScale);
-        s.posY = my - (my - s.posY) * (s.scale / oldScale);
-      } else {
-        const cx = s.cfg.w / 2;
-        const cy = s.cfg.h / 2;
-        s.posX = cx - (cx - s.posX) * (s.scale / oldScale);
-        s.posY = cy - (cy - s.posY) * (s.scale / oldScale);
+      const oldW = cfg.w;
+      cfg.w = newW;
+      cfg.h = newH;
+
+      s.el.style.width = cfg.w + 'px';
+      s.el.style.height = cfg.h + 'px';
+
+      updateFrameShape(s);
+
+      if (s.loaded) {
+        const ratio = newW / oldW;
+        s.posX *= ratio;
+        s.posY *= ratio;
+        s.scale *= ratio;
+        applyTransformFor(state, idx);
       }
-
-      applyTransformFor(state, idx);
     });
+
+    updateLabel();
   }, { passive: false });
 
   return cellState;
@@ -1999,19 +2006,39 @@ window.addEventListener('keydown', (e) => {
     const state = templateStates[activeTemplateIndex];
     const tmpl = TEMPLATES[activeTemplateIndex];
 
-    const toDelete = [...selectedIndices].filter(idx => cells[idx]);
-    if (toDelete.length === 0) return;
+    const selected = [...selectedIndices].filter(idx => cells[idx]);
+    if (selected.length === 0) return;
 
     e.preventDefault();
 
-    // Sort descending so splicing doesn't shift indices of items still to delete
-    toDelete.sort((a, b) => b - a);
+    // Phase 1: If any selected frame has an image, clear the image but keep the frame
+    const loadedFrames = selected.filter(idx => cells[idx].loaded);
+    if (loadedFrames.length > 0) {
+      loadedFrames.forEach(idx => {
+        const s = cells[idx];
+        if (s.img.src && s.img.src.startsWith('blob:')) {
+          URL.revokeObjectURL(s.img.src);
+        }
+        s.img.src = '';
+        s.loaded = false;
+        s.naturalW = 0;
+        s.naturalH = 0;
+        s.scale = 1;
+        s.posX = 0;
+        s.posY = 0;
+        s.img.style.transform = 'none';
+        s.el.classList.remove('has-image');
+      });
+      updateLabel();
+      return;
+    }
 
-    toDelete.forEach(cellIdx => {
+    // Phase 2: All selected frames are empty — delete them
+    // Sort descending so splicing doesn't shift indices of items still to delete
+    selected.sort((a, b) => b - a);
+
+    selected.forEach(cellIdx => {
       const s = cells[cellIdx];
-      if (s.img.src && s.img.src.startsWith('blob:')) {
-        URL.revokeObjectURL(s.img.src);
-      }
       s.el.remove();
       state.cells.splice(cellIdx, 1);
       tmpl.frames.splice(cellIdx, 1); // Keep template config in sync for accurate export
@@ -2048,7 +2075,7 @@ window.addEventListener('mousemove', (e) => {
     }
   }
 
-  // Multi-image-drag: apply same delta to all selected loaded frames AND text boxes
+  // Shift+drag: image panning inside frames only (no text box movement)
   if (dragging && dragCellIdx >= 0 && !swapping && multiDragStartPositions) {
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
@@ -2059,24 +2086,9 @@ window.addEventListener('mousemove', (e) => {
       s.posY = start.posY + dy;
       applyTransform(idx);
     });
-    // Also move selected text boxes
-    if (multiTextDragStartPositions) {
-      multiTextDragStartPositions.forEach((start, tbId) => {
-        const tb = getTextBoxById(tbId);
-        if (!tb) return;
-        let newX = start.x + dx;
-        let newY = start.y + dy;
-        newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
-        newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
-        tb.x = newX;
-        tb.y = newY;
-        tb.el.style.left = newX + 'px';
-        tb.el.style.top = newY + 'px';
-      });
-    }
   }
 
-  // Multi-frame-drag (Shift+drag): reposition all selected frames AND text boxes
+  // Default drag: reposition all selected frames AND text boxes
   if (frameDragging && frameDragIdx >= 0 && multiFrameDragStartPositions) {
     const rawDx = e.clientX - frameDragStartX;
     const rawDy = e.clientY - frameDragStartY;
