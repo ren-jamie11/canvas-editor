@@ -1101,6 +1101,10 @@ let frameStretchStartTextStates = null; // Map of tbId -> { x, y, width }
 let frameDragging = false, frameDragIdx = -1;
 let frameDragStartX, frameDragStartY;
 
+// Axis-locked drag state (Ctrl+Shift+drag: lock to horizontal or vertical)
+let axisLockActive = false;
+let axisLockAxis = null;  // null = not yet determined, 'h' = horizontal, 'v' = vertical
+
 // Duplicate-drag state (Ctrl+click+drag) - Multi-duplicate supported
 let duplicating = false, dupSourceIdx = -1;
 let dupCloneIndices = [];
@@ -1597,6 +1601,7 @@ function cancelInteractions() {
   dragging = false; dragCellIdx = -1;
   if (frameDragging && frameDragIdx >= 0) cells[frameDragIdx]?.el.classList.remove('dragging');
   frameDragging = false; frameDragIdx = -1;
+  axisLockActive = false; axisLockAxis = null;
   if (bgDragging) canvasArea.classList.remove('bg-dragging');
   bgDragging = false;
   swapping = false; swapSourceIdx = -1; swapTargetIdx = -1;
@@ -1737,10 +1742,39 @@ function createCell(state, tmpl, cfg, i) {
 
     const ci = cellState._cellIndex;
 
-    // Ctrl/Cmd: enter a pending state — we don't know yet if it's a click
+    // Ctrl+Shift: axis-locked frame dragging (horizontal or vertical only)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!selectedIndices.has(ci)) {
+        selectCellFor(state, ci);
+      }
+
+      frameDragging = true;
+      frameDragIdx = ci;
+      frameDragStartX = e.clientX;
+      frameDragStartY = e.clientY;
+      axisLockActive = true;
+      axisLockAxis = null; // determined on first move
+      multiFrameDragStartPositions = new Map();
+      selectedIndices.forEach(idx => {
+        const s = cells[idx];
+        multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
+        s.el.classList.add('dragging');
+      });
+      multiTextDragStartPositions = new Map();
+      selectedTextBoxIds.forEach(tbId => {
+        const t = getTextBoxById(tbId);
+        if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
+      });
+      return;
+    }
+
+    // Ctrl/Cmd (without Shift): enter a pending state — we don't know yet if it's a click
     // (toggle multi-select) or a drag (duplicate multiple). The decision is deferred
     // to mousemove (drag) or mouseup (click).
-    if ((e.ctrlKey || e.metaKey)) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
 
@@ -2264,6 +2298,7 @@ function loadFileIntoCellState(file, cellState, state, i) {
     calculateDefaultTransform(cellState);
     cellState.el.classList.add('has-image');
     applyTransformFor(state, i);
+    deselectAll();
   };
   cellState.img.src = url;
 }
@@ -2452,8 +2487,18 @@ window.addEventListener('mousemove', (e) => {
 
   // Default drag: reposition all selected frames AND text boxes
   if (frameDragging && frameDragIdx >= 0 && multiFrameDragStartPositions) {
-    const rawDx = e.clientX - frameDragStartX;
-    const rawDy = e.clientY - frameDragStartY;
+    let rawDx = e.clientX - frameDragStartX;
+    let rawDy = e.clientY - frameDragStartY;
+
+    // Axis-lock: determine axis on first meaningful move, then zero the other
+    if (axisLockActive) {
+      if (axisLockAxis === null && (Math.abs(rawDx) > 3 || Math.abs(rawDy) > 3)) {
+        axisLockAxis = Math.abs(rawDx) >= Math.abs(rawDy) ? 'h' : 'v';
+      }
+      if (axisLockAxis === 'h') rawDy = 0;
+      else if (axisLockAxis === 'v') rawDx = 0;
+    }
+
     const dragFrameSet = new Set(multiFrameDragStartPositions.keys());
     const dragTextSet = multiTextDragStartPositions ? new Set(multiTextDragStartPositions.keys()) : new Set();
     const { dx, dy } = applyAlignmentSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
@@ -2525,6 +2570,8 @@ window.addEventListener('mousemove', (e) => {
     const excludeText = frameStretchStartTextStates ? new Set(frameStretchStartTextStates.keys()) : new Set();
     const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText);
 
+    const shiftConstrain = e.shiftKey;
+
     // Apply stretch to all selected frames
     frameStretchStartStates.forEach((start, idx) => {
       const s = cells[idx];
@@ -2547,22 +2594,44 @@ window.addEventListener('mousemove', (e) => {
       if (newW < 30) { newW = 30; if (side.includes('l')) newX = start.x + start.w - 30; }
       if (newH < 30) { newH = 30; if (side.includes('t')) newY = start.y + start.h - 30; }
 
-      // Per-frame square proportion snap: if w ≈ h, snap to square
-      if (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30) {
-        // Snap the actively-stretched dimension to match the other
+      // Shift held: force square proportions (w = h)
+      // OR soft snap: if w ≈ h within threshold, snap to square
+      const softSnap = !shiftConstrain &&
+        (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30);
+
+      if (shiftConstrain) {
+        // Shift held: the actively-stretched dimension drives, the other follows
         if (side === 'l' || side === 'r') {
-          // Stretching horizontally: snap width to height
+          // Stretching horizontally: height follows width
+          newH = newW;
+        } else if (side === 't' || side === 'b') {
+          // Stretching vertically: width follows height
+          newW = newH;
+        } else {
+          // Corner handle: use the larger dimension
+          const target = Math.max(newW, newH);
+          if (newW < target) {
+            const diff = target - newW;
+            newW = target;
+            if (side.includes('l')) newX -= diff;
+          }
+          if (newH < target) {
+            const diff = target - newH;
+            newH = target;
+            if (side.includes('t')) newY -= diff;
+          }
+        }
+      } else if (softSnap) {
+        // Soft snap: the actively-stretched dimension snaps back to match the other
+        if (side === 'l' || side === 'r') {
           const diff = newH - newW;
           newW = newH;
           if (side === 'l') newX -= diff;
         } else if (side === 't' || side === 'b') {
-          // Stretching vertically: snap height to width
           const diff = newW - newH;
           newH = newW;
           if (side === 't') newY -= diff;
         } else {
-          // Corner handle: snap the dimension that's closer to the other
-          // Use the larger dimension as the target
           const target = Math.max(newW, newH);
           if (newW < target) {
             const diff = target - newW;
@@ -2674,6 +2743,7 @@ window.addEventListener('mouseup', (e) => {
   }
   frameDragging = false; frameDragIdx = -1;
   multiFrameDragStartPositions = null;
+  axisLockActive = false; axisLockAxis = null;
 
   // Finalize duplicate-drag OR ctrl+click multi-select
   if (duplicating) {
@@ -3236,6 +3306,38 @@ function attachTextBoxEvents(tb) {
       textBoxResizeStartX = e.clientX;
       textBoxResizeStartW = tb.width || tb.contentEl.offsetWidth;
       textBoxResizeStartXPos = tb.x;
+      return;
+    }
+
+    // Ctrl+Shift+click: axis-locked drag (horizontal or vertical only)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!selectedTextBoxIds.has(id)) {
+        deselectAll();
+        selectTextBox(id);
+      }
+
+      textBoxDragging = true;
+      textBoxDragId = id;
+      textBoxDragStartX = e.clientX;
+      textBoxDragStartY = e.clientY;
+      textBoxDragStartPosX = tb.x;
+      textBoxDragStartPosY = tb.y;
+      axisLockActive = true;
+      axisLockAxis = null;
+
+      multiTextDragStartPositions = new Map();
+      selectedTextBoxIds.forEach(tbId => {
+        const t = getTextBoxById(tbId);
+        if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
+      });
+      multiFrameDragStartPositions = new Map();
+      selectedIndices.forEach(idx => {
+        const s = cells[idx];
+        if (s) multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
+      });
       return;
     }
 
@@ -4068,8 +4170,18 @@ window.addEventListener('mousemove', (e) => {
 
   // Text box dragging — also moves selected frames
   if (textBoxDragging && textBoxDragId && multiTextDragStartPositions) {
-    const rawDx = e.clientX - textBoxDragStartX;
-    const rawDy = e.clientY - textBoxDragStartY;
+    let rawDx = e.clientX - textBoxDragStartX;
+    let rawDy = e.clientY - textBoxDragStartY;
+
+    // Axis-lock: determine axis on first meaningful move, then zero the other
+    if (axisLockActive) {
+      if (axisLockAxis === null && (Math.abs(rawDx) > 3 || Math.abs(rawDy) > 3)) {
+        axisLockAxis = Math.abs(rawDx) >= Math.abs(rawDy) ? 'h' : 'v';
+      }
+      if (axisLockAxis === 'h') rawDy = 0;
+      else if (axisLockAxis === 'v') rawDx = 0;
+    }
+
     const dragFrameSet = multiFrameDragStartPositions ? new Set(multiFrameDragStartPositions.keys()) : new Set();
     const dragTextSet = new Set(multiTextDragStartPositions.keys());
     const { dx, dy } = applyAlignmentSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
@@ -4116,7 +4228,8 @@ window.addEventListener('mouseup', (e) => {
     textBoxDragging = false;
     textBoxDragId = null;
     multiTextDragStartPositions = null;
-    multiFrameDragStartPositions = null; 
+    multiFrameDragStartPositions = null;
+    axisLockActive = false; axisLockAxis = null;
   }
   if (textBoxResizing) {
     textBoxResizing = false;
