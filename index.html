@@ -637,13 +637,41 @@
 
   /* Text placement cursor */
   .canvas-area.text-place-mode {
-    cursor: text;
+    cursor: crosshair;
   }
   .canvas-area.text-place-mode .cell {
     pointer-events: none;
   }
   .canvas-area.text-place-mode .text-box {
     pointer-events: none;
+  }
+
+  /* Drag preview rectangle shown while click-dragging to create a text box */
+  .text-create-preview {
+    position: absolute;
+    border: 1.5px dashed rgba(90, 90, 255, 0.7);
+    background: rgba(90, 90, 255, 0.06);
+    pointer-events: none;
+    z-index: 200;
+  }
+
+  /* Alignment guide lines */
+  .alignment-guide {
+    position: absolute;
+    pointer-events: none;
+    z-index: 300;
+  }
+  .alignment-guide.guide-h {
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 1px dashed rgba(255, 80, 120, 0.7);
+  }
+  .alignment-guide.guide-v {
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed rgba(255, 80, 120, 0.7);
   }
 </style>
 </head>
@@ -977,6 +1005,206 @@ let marqueeEl = null;
 // Multi-drag state: stores starting positions for all selected frames/images
 let multiDragStartPositions = null; // Map of ci -> { posX, posY }
 let multiFrameDragStartPositions = null; // Map of ci -> { x, y }
+
+// ===================== ALIGNMENT GUIDES =====================
+// Controls how close (in pixels) an object center must be to another
+// object's center before it snaps into alignment.
+const ALIGNMENT_CLICK_PIXELS = 5;
+
+let activeGuideHs = []; // horizontal guide line DOM elements
+let activeGuideVs = []; // vertical guide line DOM elements
+
+function ensureGuideH(index) {
+  while (activeGuideHs.length <= index) {
+    const g = document.createElement('div');
+    g.className = 'alignment-guide guide-h';
+    g.style.display = 'none';
+    canvasArea.appendChild(g);
+    activeGuideHs.push(g);
+  }
+  return activeGuideHs[index];
+}
+
+function ensureGuideV(index) {
+  while (activeGuideVs.length <= index) {
+    const g = document.createElement('div');
+    g.className = 'alignment-guide guide-v';
+    g.style.display = 'none';
+    canvasArea.appendChild(g);
+    activeGuideVs.push(g);
+  }
+  return activeGuideVs[index];
+}
+
+function hideGuides() {
+  activeGuideHs.forEach(g => g.style.display = 'none');
+  activeGuideVs.forEach(g => g.style.display = 'none');
+}
+
+function removeGuideEls() {
+  activeGuideHs.forEach(g => g.remove());
+  activeGuideVs.forEach(g => g.remove());
+  activeGuideHs = [];
+  activeGuideVs = [];
+}
+
+// Returns an array of { cx, cy } for all non-dragged objects on the canvas.
+// Also includes the canvas center itself as an alignment target.
+function getAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
+  const targets = [];
+  // Canvas center
+  targets.push({ cx: CANVAS_W / 2, cy: CANVAS_H / 2 });
+  // Frames
+  cells.forEach((s, idx) => {
+    if (excludeFrameIndices.has(idx)) return;
+    targets.push({ cx: s.cfg.x + s.cfg.w / 2, cy: s.cfg.y + s.cfg.h / 2 });
+  });
+  // Text boxes
+  const tbs = getTextBoxes();
+  tbs.forEach(tb => {
+    if (excludeTextBoxIds.has(tb.id)) return;
+    const w = tb.width || tb.contentEl.offsetWidth;
+    const h = tb.contentEl.offsetHeight;
+    targets.push({ cx: tb.x + w / 2, cy: tb.y + h / 2 });
+  });
+  return targets;
+}
+
+// Build the list of projected centers for each individual dragged object
+// given raw dx/dy from drag start positions.
+function getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositionsTextBoxes) {
+  const centers = [];
+  if (startPositionsFrames) {
+    startPositionsFrames.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      centers.push({
+        cx: start.x + rawDx + s.cfg.w / 2,
+        cy: start.y + rawDy + s.cfg.h / 2
+      });
+    });
+  }
+  if (startPositionsTextBoxes) {
+    startPositionsTextBoxes.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      const w = tb.width || tb.contentEl.offsetWidth;
+      const h = tb.contentEl.offsetHeight;
+      centers.push({
+        cx: start.x + rawDx + w / 2,
+        cy: start.y + rawDy + h / 2
+      });
+    });
+  }
+  return centers;
+}
+
+// Given raw dx/dy deltas and the sets of objects being dragged,
+// compute snapped dx/dy by checking EACH dragged object individually
+// against all targets. The closest snap wins. Show guide lines for
+// all alignments that match after snapping.
+function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, startPositionsFrames, startPositionsTextBoxes) {
+  const centers = getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositionsTextBoxes);
+  if (centers.length === 0) return { dx: rawDx, dy: rawDy };
+
+  const targets = getAlignmentTargets(dragFrameIndices, dragTextBoxIds);
+  if (targets.length === 0) return { dx: rawDx, dy: rawDy };
+
+  // Find the smallest snap correction across all dragged objects
+  let bestSnapDxCorrection = null; // correction to add to rawDx
+  let bestSnapDxDist = Infinity;
+  let bestSnapDyCorrection = null;
+  let bestSnapDyDist = Infinity;
+
+  for (const c of centers) {
+    for (const t of targets) {
+      const distX = Math.abs(c.cx - t.cx);
+      if (distX < ALIGNMENT_CLICK_PIXELS && distX < bestSnapDxDist) {
+        bestSnapDxDist = distX;
+        bestSnapDxCorrection = t.cx - c.cx;
+      }
+      const distY = Math.abs(c.cy - t.cy);
+      if (distY < ALIGNMENT_CLICK_PIXELS && distY < bestSnapDyDist) {
+        bestSnapDyDist = distY;
+        bestSnapDyCorrection = t.cy - c.cy;
+      }
+    }
+  }
+
+  const snapDx = bestSnapDxCorrection !== null ? rawDx + bestSnapDxCorrection : rawDx;
+  const snapDy = bestSnapDyCorrection !== null ? rawDy + bestSnapDyCorrection : rawDy;
+
+  // Now recompute centers with snapped deltas to find ALL active guide lines
+  const snappedCenters = getDraggedObjectCenters(snapDx, snapDy, startPositionsFrames, startPositionsTextBoxes);
+
+  // Collect unique guide positions (deduplicate to nearest pixel)
+  const guideHSet = new Set();
+  const guideVSet = new Set();
+  for (const c of snappedCenters) {
+    for (const t of targets) {
+      if (Math.abs(c.cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
+      if (Math.abs(c.cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
+    }
+  }
+
+  const guideHArr = [...guideHSet];
+  const guideVArr = [...guideVSet];
+
+  // Show/hide horizontal guides
+  guideHArr.forEach((y, i) => {
+    const g = ensureGuideH(i);
+    g.style.top = y + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideHArr.length; i < activeGuideHs.length; i++) {
+    activeGuideHs[i].style.display = 'none';
+  }
+
+  // Show/hide vertical guides
+  guideVArr.forEach((x, i) => {
+    const g = ensureGuideV(i);
+    g.style.left = x + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideVArr.length; i < activeGuideVs.length; i++) {
+    activeGuideVs[i].style.display = 'none';
+  }
+
+  return { dx: snapDx, dy: snapDy };
+}
+
+// Helper: apply final positions for frames and text boxes after snap
+function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
+  if (frameStartPositions) {
+    frameStartPositions.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      const cfg = s.cfg;
+      let newX = start.x + dx;
+      let newY = start.y + dy;
+      newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
+      newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
+      cfg.x = newX;
+      cfg.y = newY;
+      s.el.style.left = cfg.x + 'px';
+      s.el.style.top = cfg.y + 'px';
+    });
+  }
+  if (textStartPositions) {
+    textStartPositions.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      let newX = start.x + dx;
+      let newY = start.y + dy;
+      newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
+      newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
+      tb.x = newX;
+      tb.y = newY;
+      tb.el.style.left = newX + 'px';
+      tb.el.style.top = newY + 'px';
+    });
+  }
+}
 
 // DOM refs
 const sidebar      = document.getElementById('sidebar');
@@ -1850,36 +2078,12 @@ window.addEventListener('mousemove', (e) => {
 
   // Multi-frame-drag (Shift+drag): reposition all selected frames AND text boxes
   if (frameDragging && frameDragIdx >= 0 && multiFrameDragStartPositions) {
-    const dx = e.clientX - frameDragStartX;
-    const dy = e.clientY - frameDragStartY;
-    multiFrameDragStartPositions.forEach((start, idx) => {
-      const s = cells[idx];
-      if (!s) return;
-      const cfg = s.cfg;
-      let newX = start.x + dx;
-      let newY = start.y + dy;
-      newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
-      newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
-      cfg.x = newX;
-      cfg.y = newY;
-      s.el.style.left = cfg.x + 'px';
-      s.el.style.top = cfg.y + 'px';
-    });
-    // Also move selected text boxes
-    if (multiTextDragStartPositions) {
-      multiTextDragStartPositions.forEach((start, tbId) => {
-        const tb = getTextBoxById(tbId);
-        if (!tb) return;
-        let newX = start.x + dx;
-        let newY = start.y + dy;
-        newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
-        newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
-        tb.x = newX;
-        tb.y = newY;
-        tb.el.style.left = newX + 'px';
-        tb.el.style.top = newY + 'px';
-      });
-    }
+    const rawDx = e.clientX - frameDragStartX;
+    const rawDy = e.clientY - frameDragStartY;
+    const dragFrameSet = new Set(multiFrameDragStartPositions.keys());
+    const dragTextSet = multiTextDragStartPositions ? new Set(multiTextDragStartPositions.keys()) : new Set();
+    const { dx, dy } = applyAlignmentSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
+    applyDragPositions(dx, dy, multiFrameDragStartPositions, multiTextDragStartPositions);
   }
 
   // Duplicate-drag (Ctrl+drag): create clones on first move, then reposition them
@@ -1926,39 +2130,12 @@ window.addEventListener('mousemove', (e) => {
       updateLabel();
     }
 
-    // Move the frame clones
-    if (dupCloneIndices.length > 0) {
-      dupCloneIndices.forEach(cloneIdx => {
-         const s = cells[cloneIdx];
-         if(!s) return;
-         const cfg = s.cfg;
-         const startPos = dupCloneToStartPos.get(cloneIdx);
-         let newX = startPos.x + dx;
-         let newY = startPos.y + dy;
-         newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
-         newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
-         cfg.x = newX;
-         cfg.y = newY;
-         s.el.style.left = cfg.x + 'px';
-         s.el.style.top = cfg.y + 'px';
-      });
-    }
-
-    // Move the text box clones
-    if (dupTextBoxCloneIds.length > 0) {
-      dupTextBoxCloneIds.forEach(cloneId => {
-        const tb = getTextBoxById(cloneId);
-        if (!tb) return;
-        const startPos = dupTextBoxCloneStartPos.get(cloneId);
-        let newX = startPos.x + dx;
-        let newY = startPos.y + dy;
-        newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
-        newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
-        tb.x = newX;
-        tb.y = newY;
-        tb.el.style.left = newX + 'px';
-        tb.el.style.top = newY + 'px';
-      });
+    // Move the clones (frames + text boxes) with alignment snapping
+    if (dupCloneIndices.length > 0 || dupTextBoxCloneIds.length > 0) {
+      const dragFrameSet = new Set(dupCloneIndices);
+      const dragTextSet = new Set(dupTextBoxCloneIds);
+      const { dx: snapDx, dy: snapDy } = applyAlignmentSnap(dx, dy, dragFrameSet, dragTextSet, dupCloneToStartPos, dupTextBoxCloneStartPos);
+      applyDragPositions(snapDx, snapDy, dupCloneToStartPos.size > 0 ? dupCloneToStartPos : null, dupTextBoxCloneStartPos.size > 0 ? dupTextBoxCloneStartPos : null);
     }
   }
 
@@ -2015,6 +2192,8 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+  hideGuides();
+
   if (swapping && swapSourceIdx >= 0) {
     if (swapTargetIdx >= 0 && swapTargetIdx !== swapSourceIdx && cells[swapTargetIdx].loaded) {
       performSwap(swapSourceIdx, swapTargetIdx);
@@ -2640,7 +2819,17 @@ function attachTextBoxEvents(tb) {
     if (el.classList.contains('editing')) return;
     e.preventDefault();
     e.stopPropagation();
-    enterTextEditing(id);
+    // Deselect all other objects (frames and text boxes), keep only this text box
+    deselectAllTextBoxes();
+    // Also deselect all frames
+    selectedIndices.forEach(idx => {
+      cells[idx].el.classList.remove('selected');
+    });
+    selectedIndices.clear();
+    updateLabel();
+    // Select this text box and enter editing with cursor at click position
+    selectTextBox(id);
+    enterTextEditing(id, e);
   });
 
   // Scroll to resize font (when selected but not editing)
@@ -2699,17 +2888,50 @@ deselectAll = function() {
   deselectAllTextBoxes();
 };
 
-function enterTextEditing(id) {
+function enterTextEditing(id, mouseEvent) {
   const tb = getTextBoxById(id);
   if (!tb) return;
   activeTextBoxId = id;
   tb.el.classList.add('editing');
   tb.contentEl.contentEditable = 'true';
   tb.contentEl.focus();
-  // Place cursor at end
-  const sel = window.getSelection();
-  sel.selectAllChildren(tb.contentEl);
-  sel.collapseToEnd();
+
+  if (mouseEvent) {
+    // Place cursor at the character position where the user double-clicked
+    let caretSet = false;
+    if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(mouseEvent.clientX, mouseEvent.clientY);
+      if (pos) {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.setStart(pos.offsetNode, pos.offset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        caretSet = true;
+      }
+    } else if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(mouseEvent.clientX, mouseEvent.clientY);
+      if (range) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        sel.collapseToStart();
+        caretSet = true;
+      }
+    }
+    if (!caretSet) {
+      // Fallback: place cursor at end
+      const sel = window.getSelection();
+      sel.selectAllChildren(tb.contentEl);
+      sel.collapseToEnd();
+    }
+  } else {
+    // No mouse event provided — place cursor at end
+    const sel = window.getSelection();
+    sel.selectAllChildren(tb.contentEl);
+    sel.collapseToEnd();
+  }
 }
 
 function finalizeTextBox(id) {
@@ -2904,6 +3126,12 @@ function exitTextPlaceMode() {
 }
 
 // Canvas click handler for text placement (runs before the marquee handler)
+// Drag-to-create: mousedown starts tracking, mousemove shows preview, mouseup creates the box
+let textCreateDragging = false;
+let textCreateStartX = 0;
+let textCreateStartY = 0;
+let textCreatePreviewEl = null;
+
 canvasArea.addEventListener('mousedown', (e) => {
   if (!textPlaceMode) return;
   if (e.target.closest('.text-box')) return;
@@ -2921,12 +3149,71 @@ canvasArea.addEventListener('mousedown', (e) => {
   e.stopPropagation();
 
   const rect = canvasArea.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  textCreateStartX = e.clientX - rect.left;
+  textCreateStartY = e.clientY - rect.top;
+  textCreateDragging = true;
+
+  // Create preview element
+  textCreatePreviewEl = document.createElement('div');
+  textCreatePreviewEl.className = 'text-create-preview';
+  textCreatePreviewEl.style.left = textCreateStartX + 'px';
+  textCreatePreviewEl.style.top = textCreateStartY + 'px';
+  textCreatePreviewEl.style.width = '0px';
+  textCreatePreviewEl.style.height = '0px';
+  canvasArea.appendChild(textCreatePreviewEl);
 
   deselectAll();
-  createTextBox(x, y);
 }, true); // capture phase so it fires before other canvas handlers
+
+// Mousemove: update drag preview size (both width and height)
+window.addEventListener('mousemove', (e) => {
+  if (!textCreateDragging || !textCreatePreviewEl) return;
+
+  const rect = canvasArea.getBoundingClientRect();
+  const currentX = e.clientX - rect.left;
+  const currentY = e.clientY - rect.top;
+
+  const left = Math.min(textCreateStartX, currentX);
+  const top = Math.min(textCreateStartY, currentY);
+  const width = Math.abs(currentX - textCreateStartX);
+  const height = Math.abs(currentY - textCreateStartY);
+
+  textCreatePreviewEl.style.left = left + 'px';
+  textCreatePreviewEl.style.top = top + 'px';
+  textCreatePreviewEl.style.width = width + 'px';
+  textCreatePreviewEl.style.height = height + 'px';
+});
+
+// Mouseup: finalize creation
+window.addEventListener('mouseup', (e) => {
+  if (!textCreateDragging) return;
+  textCreateDragging = false;
+
+  // Remove preview
+  if (textCreatePreviewEl) {
+    textCreatePreviewEl.remove();
+    textCreatePreviewEl = null;
+  }
+
+  const rect = canvasArea.getBoundingClientRect();
+  const endX = e.clientX - rect.left;
+  const endY = e.clientY - rect.top;
+  const dragWidth = Math.abs(endX - textCreateStartX);
+  const leftX = Math.min(textCreateStartX, endX);
+  const topY = Math.min(textCreateStartY, endY);
+
+  const MIN_DRAG_WIDTH = 10; // threshold to distinguish click from drag
+
+  if (dragWidth > MIN_DRAG_WIDTH) {
+    // Drag-to-create: use the dragged width, place at top-left of drawn rectangle
+    const tb = createTextBox(leftX, topY);
+    tb.width = dragWidth;
+    tb.contentEl.style.width = dragWidth + 'px';
+  } else {
+    // Simple click: auto-expand width
+    createTextBox(textCreateStartX, textCreateStartY);
+  }
+});
 
 // ===================== TEXT TOOL BUTTON =====================
 document.getElementById('textToolBtn').addEventListener('click', () => {
@@ -3134,36 +3421,12 @@ window.addEventListener('mousemove', (e) => {
 
   // Text box dragging — also moves selected frames
   if (textBoxDragging && textBoxDragId && multiTextDragStartPositions) {
-    const dx = e.clientX - textBoxDragStartX;
-    const dy = e.clientY - textBoxDragStartY;
-    multiTextDragStartPositions.forEach((start, tbId) => {
-      const tb = getTextBoxById(tbId);
-      if (!tb) return;
-      let newX = start.x + dx;
-      let newY = start.y + dy;
-      newX = Math.max(0, Math.min(CANVAS_W - 20, newX));
-      newY = Math.max(0, Math.min(CANVAS_H - 20, newY));
-      tb.x = newX;
-      tb.y = newY;
-      tb.el.style.left = newX + 'px';
-      tb.el.style.top = newY + 'px';
-    });
-    // Also move selected frames
-    if (multiFrameDragStartPositions) {
-      multiFrameDragStartPositions.forEach((start, idx) => {
-        const s = cells[idx];
-        if (!s) return;
-        const cfg = s.cfg;
-        let newX = start.x + dx;
-        let newY = start.y + dy;
-        newX = Math.max(0, Math.min(CANVAS_W - cfg.w, newX));
-        newY = Math.max(0, Math.min(CANVAS_H - cfg.h, newY));
-        cfg.x = newX;
-        cfg.y = newY;
-        s.el.style.left = cfg.x + 'px';
-        s.el.style.top = cfg.y + 'px';
-      });
-    }
+    const rawDx = e.clientX - textBoxDragStartX;
+    const rawDy = e.clientY - textBoxDragStartY;
+    const dragFrameSet = multiFrameDragStartPositions ? new Set(multiFrameDragStartPositions.keys()) : new Set();
+    const dragTextSet = new Set(multiTextDragStartPositions.keys());
+    const { dx, dy } = applyAlignmentSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
+    applyDragPositions(dx, dy, multiFrameDragStartPositions, multiTextDragStartPositions);
   }
 
   // Text box resizing
@@ -3187,6 +3450,8 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+  hideGuides();
+
   // Deferred ctrl+click: no drag happened — toggle multi-select
   if (textBoxDupPending && textBoxDupSourceId) {
     const id = textBoxDupSourceId;
@@ -3333,6 +3598,7 @@ switchTemplate = function(idx) {
   if (activeTextBoxId) finalizeTextBox(activeTextBoxId);
   deselectAllTextBoxes();
   exitTextPlaceMode();
+  removeGuideEls();
 
   _origSwitchTemplate(idx);
 
