@@ -234,6 +234,32 @@
     pointer-events: none;
   }
 
+  /* User-applied border (rectangular frames) */
+  .cell-user-border {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+    border: none;
+  }
+
+  /* User-applied border (shaped frames — SVG overlay) */
+  .cell-user-border-svg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .cell-user-border-svg svg {
+    width: 100%;
+    height: 100%;
+  }
+  .cell-user-border-svg .user-border-path {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 0;
+  }
+
   /* Frame stretch controls overlay (sibling of .cell, not clipped) */
   .frame-controls {
     position: absolute;
@@ -650,6 +676,41 @@
 
   .rs-disabled { opacity: 0.35; pointer-events: none; }
 
+  /* Border toggle (small on/off switch) */
+  .rs-border-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .rs-border-toggle input { display: none; }
+  .rs-border-toggle-slider {
+    position: relative;
+    width: 30px;
+    height: 16px;
+    background: #2a2a30;
+    border-radius: 8px;
+    transition: background 0.2s;
+  }
+  .rs-border-toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #666;
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+  .rs-border-toggle input:checked + .rs-border-toggle-slider {
+    background: #3a3a6a;
+  }
+  .rs-border-toggle input:checked + .rs-border-toggle-slider::after {
+    transform: translateX(14px);
+    background: #7a7aff;
+  }
+
   /* ---- Text box on canvas ---- */
   .text-box {
     position: absolute;
@@ -859,6 +920,27 @@
       <input type="text" class="rs-hex-input" id="rsHexInput" value="#FFFFFF" maxlength="7" spellcheck="false">
     </div>
   </div>
+
+  <div class="rs-section rs-text-format-section" id="borderWeightSection">
+    <div class="rs-section-title">Border</div>
+    <div class="rs-row" style="gap: 8px; align-items: center;">
+      <label class="rs-border-toggle" title="Toggle border">
+        <input type="checkbox" id="rsBorderToggle">
+        <span class="rs-border-toggle-slider"></span>
+      </label>
+      <select class="rs-select" id="rsBorderWeight" style="flex:1;">
+        <option value="0.25">¼ pt</option>
+        <option value="0.5">½ pt</option>
+        <option value="0.75">¾ pt</option>
+        <option value="1" selected>1 pt</option>
+        <option value="1.5">1½ pt</option>
+        <option value="2.25">2¼ pt</option>
+        <option value="3">3 pt</option>
+        <option value="4.5">4½ pt</option>
+        <option value="6">6 pt</option>
+      </select>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -990,6 +1072,9 @@ document.documentElement.style.setProperty('--frame-border-color', FRAME_BORDER_
 document.documentElement.style.setProperty('--selection-border-color', SELECTION_BORDER_COLOR);
 document.documentElement.style.setProperty('--selection-border-width', SELECTION_BORDER_WIDTH + 'px');
 document.documentElement.style.setProperty('--selection-border-width-num', SELECTION_BORDER_WIDTH);
+
+// Default border width for user-applied frame borders
+const DEFAULT_FRAME_BORDER_WIDTH = 1;
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -1133,15 +1218,15 @@ let multiFrameDragStartPositions = null; // Map of ci -> { x, y }
 // ===================== ALIGNMENT GUIDES =====================
 // Controls how close (in pixels) an object center must be to another
 // object's center before it snaps into alignment.
-const ALIGNMENT_CLICK_PIXELS = 5;
+const ALIGNMENT_CLICK_PIXELS = 8;
 
 // Controls how close (in pixels) a stretched edge must be to another
 // object's edge before it snaps into alignment.
-const ALIGNMENT_STRETCH_CLICK_PIXELS = 5;
+const ALIGNMENT_STRETCH_CLICK_PIXELS = 8;
 
 // Controls how close (in pixels) a frame's width must be to its height
 // before it snaps to square proportions during stretching.
-const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 5;
+const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 8;
 
 let activeGuideHs = []; // horizontal guide line DOM elements
 let activeGuideVs = []; // vertical guide line DOM elements
@@ -1370,15 +1455,41 @@ function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
 // Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
 // each stretched object's active edges against all target edges.
 // Returns { dx, dy } with snap corrections applied.
-function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds) {
+function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds, shiftConstrain) {
   const { hEdges, vEdges } = getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds);
 
   // Determine which axes can snap based on the handle side
-  const canSnapX = side.includes('l') || side.includes('r');
-  const canSnapY = side.includes('t') || side.includes('b');
+  // When shift is held, both dimensions change so both axes can snap
+  const canSnapX = shiftConstrain || side.includes('l') || side.includes('r');
+  const canSnapY = shiftConstrain || side.includes('t') || side.includes('b');
 
   let bestDxCorrection = null, bestDxDist = Infinity;
   let bestDyCorrection = null, bestDyDist = Infinity;
+
+  // Helper: compute projected geometry for a frame given dx/dy, including shift-constrain
+  function projectFrame(start, projDx, projDy) {
+    let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
+    if (side === 'r') { newW = start.w + projDx; }
+    else if (side === 'l') { newW = start.w - projDx; newX = start.x + projDx; }
+    else if (side === 'b') { newH = start.h + projDy; }
+    else if (side === 't') { newH = start.h - projDy; newY = start.y + projDy; }
+    else if (side === 'br') { newW = start.w + projDx; newH = start.h + projDy; }
+    else if (side === 'bl') { newW = start.w - projDx; newH = start.h + projDy; newX = start.x + projDx; }
+    else if (side === 'tr') { newW = start.w + projDx; newH = start.h - projDy; newY = start.y + projDy; }
+    else if (side === 'tl') { newW = start.w - projDx; newH = start.h - projDy; newX = start.x + projDx; newY = start.y + projDy; }
+
+    // Apply shift-constrain so projected geometry reflects what the user sees
+    if (shiftConstrain) {
+      if (side === 'l' || side === 'r') { newH = newW; }
+      else if (side === 't' || side === 'b') { newW = newH; }
+      else {
+        const target = Math.max(newW, newH);
+        newW = target; newH = target;
+      }
+    }
+
+    return { newX, newY, newW, newH };
+  }
 
   // Check each stretched frame's active edges
   if (stretchStartStates) {
@@ -1386,20 +1497,14 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       const s = cells[idx];
       if (!s) return;
 
-      // Compute projected geometry with raw delta
-      let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
-      if (side === 'r') { newW = start.w + rawDx; }
-      else if (side === 'l') { newW = start.w - rawDx; newX = start.x + rawDx; }
-      else if (side === 'b') { newH = start.h + rawDy; }
-      else if (side === 't') { newH = start.h - rawDy; newY = start.y + rawDy; }
-      else if (side === 'br') { newW = start.w + rawDx; newH = start.h + rawDy; }
-      else if (side === 'bl') { newW = start.w - rawDx; newH = start.h + rawDy; newX = start.x + rawDx; }
-      else if (side === 'tr') { newW = start.w + rawDx; newH = start.h - rawDy; newY = start.y + rawDy; }
-      else if (side === 'tl') { newW = start.w - rawDx; newH = start.h - rawDy; newX = start.x + rawDx; newY = start.y + rawDy; }
+      const { newX, newY, newW, newH } = projectFrame(start, rawDx, rawDy);
 
       // Check vertical edges (left/right of object → snap dx)
       if (canSnapX) {
-        const activeXEdge = side.includes('r') ? newX + newW : newX;
+        // For edge handles like 't' or 'b' with shift, the right edge moves too
+        const activeXEdge = side.includes('l') ? newX :
+                            side.includes('r') ? newX + newW :
+                            newX + newW; // shift: non-l defaults to right edge
         for (const ve of vEdges) {
           const dist = Math.abs(activeXEdge - ve);
           if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist) {
@@ -1407,11 +1512,18 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
             bestDxCorrection = ve - activeXEdge;
           }
         }
+        // For shift + vertical edge handles, also check the left edge if it moves
+        if (shiftConstrain && !side.includes('l') && !side.includes('r')) {
+          // Width changed but x didn't — check right edge (already done above)
+          // No need to check left edge since it stays fixed for t/b handles
+        }
       }
 
       // Check horizontal edges (top/bottom of object → snap dy)
       if (canSnapY) {
-        const activeYEdge = side.includes('b') ? newY + newH : newY;
+        const activeYEdge = side.includes('t') ? newY :
+                            side.includes('b') ? newY + newH :
+                            newY + newH; // shift: non-t defaults to bottom edge
         for (const he of hEdges) {
           const dist = Math.abs(activeYEdge - he);
           if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDyDist) {
@@ -1445,10 +1557,33 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
 
   // Apply corrections to raw deltas
   let snapDx = rawDx, snapDy = rawDy;
+
+  // For shift+edge handles, a snap on the secondary axis must be converted
+  // to a correction on the primary axis (since the secondary axis delta is unused
+  // in the raw geometry — the secondary dimension follows via shift-constrain).
+  if (shiftConstrain && (side === 'l' || side === 'r' || side === 't' || side === 'b')) {
+    if ((side === 'l' || side === 'r') && bestDyCorrection !== null) {
+      // Bottom/top edge snapped. Convert to dx correction.
+      // With shift: newH = newW = start.w ± dx. Bottom edge = start.y + newW.
+      // Desired: bottom edge at (projected bottom + bestDyCorrection).
+      // So: start.y + (start.w + snapDx) = start.y + (start.w + rawDx) + bestDyCorrection
+      // → snapDx = rawDx + bestDyCorrection
+      // Only apply if there's no closer direct dx correction
+      if (bestDxCorrection === null || Math.abs(bestDyCorrection) < Math.abs(bestDxCorrection)) {
+        bestDxCorrection = bestDyCorrection;
+      }
+      bestDyCorrection = null; // dy doesn't affect geometry for l/r handles
+    }
+    if ((side === 't' || side === 'b') && bestDxCorrection !== null) {
+      // Left/right edge snapped. Convert to dy correction.
+      if (bestDyCorrection === null || Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
+        bestDyCorrection = bestDxCorrection;
+      }
+      bestDxCorrection = null; // dx doesn't affect geometry for t/b handles
+    }
+  }
+
   if (bestDxCorrection !== null) {
-    // The correction adjusts the active edge position. For side 'r', adding to dx
-    // moves the right edge right. For side 'l', dx is inverted in the geometry calc,
-    // so we still add the correction directly to rawDx.
     snapDx = rawDx + bestDxCorrection;
   }
   if (bestDyCorrection !== null) {
@@ -1461,24 +1596,20 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
 
   if (stretchStartStates) {
     stretchStartStates.forEach((start, idx) => {
-      let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
-      if (side === 'r') { newW = start.w + snapDx; }
-      else if (side === 'l') { newW = start.w - snapDx; newX = start.x + snapDx; }
-      else if (side === 'b') { newH = start.h + snapDy; }
-      else if (side === 't') { newH = start.h - snapDy; newY = start.y + snapDy; }
-      else if (side === 'br') { newW = start.w + snapDx; newH = start.h + snapDy; }
-      else if (side === 'bl') { newW = start.w - snapDx; newH = start.h + snapDy; newX = start.x + snapDx; }
-      else if (side === 'tr') { newW = start.w + snapDx; newH = start.h - snapDy; newY = start.y + snapDy; }
-      else if (side === 'tl') { newW = start.w - snapDx; newH = start.h - snapDy; newX = start.x + snapDx; newY = start.y + snapDy; }
+      const { newX, newY, newW, newH } = projectFrame(start, snapDx, snapDy);
 
       if (canSnapX) {
-        const activeXEdge = side.includes('r') ? newX + newW : newX;
+        const activeXEdge = side.includes('l') ? newX :
+                            side.includes('r') ? newX + newW :
+                            newX + newW;
         for (const ve of vEdges) {
           if (Math.abs(activeXEdge - ve) < 0.5) guideVSet.add(Math.round(ve));
         }
       }
       if (canSnapY) {
-        const activeYEdge = side.includes('b') ? newY + newH : newY;
+        const activeYEdge = side.includes('t') ? newY :
+                            side.includes('b') ? newY + newH :
+                            newY + newH;
         for (const he of hEdges) {
           if (Math.abs(activeYEdge - he) < 0.5) guideHSet.add(Math.round(he));
         }
@@ -1677,6 +1808,20 @@ function createCell(state, tmpl, cfg, i) {
   const img = document.createElement('img');
   cell.appendChild(img);
 
+  // User-applied border element (inside cell, so it's clipped by clip-path for shapes)
+  const userBorderEl = document.createElement('div');
+  userBorderEl.className = 'cell-user-border';
+  cell.appendChild(userBorderEl);
+
+  // For shaped cells, use an SVG border overlay that follows the shape path
+  let userBorderSvgEl = null;
+  if (sp) {
+    userBorderSvgEl = document.createElement('div');
+    userBorderSvgEl.className = 'cell-user-border-svg';
+    userBorderSvgEl.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="user-border-path" d="${sp}"/></svg>`;
+    cell.appendChild(userBorderSvgEl);
+  }
+
   // Frame controls overlay (separate from cell to avoid clip-path clipping)
   const controlsEl = document.createElement('div');
   controlsEl.className = 'frame-controls';
@@ -1702,6 +1847,8 @@ function createCell(state, tmpl, cfg, i) {
     img: img,
     fileInput: fileInput,
     upload: upload,
+    userBorderEl: userBorderEl,
+    userBorderSvgEl: userBorderSvgEl,
     cfg: cfg,
     naturalW: 0,
     naturalH: 0,
@@ -1710,10 +1857,16 @@ function createCell(state, tmpl, cfg, i) {
     posY: 0,
     loaded: false,
     lastClickTime: 0,
+    borderEnabled: cfg.borderEnabled || false,
+    borderColor: cfg.borderColor || '#ffffff',
+    borderWidth: cfg.borderWidth || DEFAULT_FRAME_BORDER_WIDTH,
     _templateState: state,
     _templateIndex: tmpl._index,
     _cellIndex: i,
   };
+
+  // Apply initial border if set in config
+  applyUserBorder(cellState);
 
   // ---- Event handlers (they capture cellState and state by closure) ----
   // IMPORTANT: All handlers use cellState._cellIndex (not the construction-time i)
@@ -2016,6 +2169,9 @@ function duplicateCell(sourceIdx, newX, newY) {
     h: src.cfg.h,
     shape: src.cfg.shape || null,
     label: (src.cfg.label || 'Frame') + ' copy',
+    borderEnabled: src.borderEnabled,
+    borderColor: src.borderColor,
+    borderWidth: src.borderWidth,
   };
   // Clear any cached scaled path so it's recomputed for the new config object
   delete newCfg._scaledPath;
@@ -2177,6 +2333,41 @@ function updateFrameShape(cellState) {
     if (outlineEl) {
       outlineEl.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="outline-path" d="${sp}"/></svg>`;
     }
+    // Update user border SVG path if present
+    if (cellState.userBorderSvgEl) {
+      cellState.userBorderSvgEl.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="user-border-path" d="${sp}"/></svg>`;
+      applyUserBorder(cellState);
+    }
+  }
+}
+
+// Apply user-set border to a frame (both rect and shaped)
+// Apply user-set border to a frame (both rect and shaped)
+function applyUserBorder(s) {
+  if (s.borderEnabled && s.borderWidth > 0) {
+    const color = s.borderColor;
+    const width = s.borderWidth;
+    if (s.cfg.shape && s.userBorderSvgEl) {
+      // Shaped: apply via SVG style properties to override CSS
+      s.userBorderEl.style.border = 'none';
+      const pathEl = s.userBorderSvgEl.querySelector('.user-border-path');
+      if (pathEl) {
+        pathEl.style.stroke = color;
+        pathEl.style.strokeWidth = (width * 2) + 'px'; // *2 because half is clipped outside
+      }
+    } else {
+      // Rectangular: apply via CSS border
+      s.userBorderEl.style.border = `${width}px solid ${color}`;
+    }
+  } else {
+    s.userBorderEl.style.border = 'none';
+    if (s.userBorderSvgEl) {
+      const pathEl = s.userBorderSvgEl.querySelector('.user-border-path');
+      if (pathEl) {
+        pathEl.style.stroke = 'transparent';
+        pathEl.style.strokeWidth = '0px';
+      }
+    }
   }
 }
 
@@ -2188,6 +2379,7 @@ function selectCellFor(state, i) {
   state.cells[i].controlsEl.classList.add('visible');
   selectedIndices = state.selectedIndices;
   updateLabel();
+  syncFormatUIToSelection();
 }
 
 function selectMultiple(state, indices) {
@@ -2199,6 +2391,7 @@ function selectMultiple(state, indices) {
   });
   selectedIndices = state.selectedIndices;
   updateLabel();
+  syncFormatUIToSelection();
 }
 
 function deselectAll() {
@@ -2213,6 +2406,7 @@ function deselectAll() {
   state.selectedIndices.clear();
   selectedIndices = state.selectedIndices;
   updateLabel();
+  syncFormatUIToSelection();
 }
 
 // Sync a single frame's controls overlay position/size with its cell cfg
@@ -2391,6 +2585,21 @@ document.addEventListener('mousedown', (e) => {
   deselectAll();
 });
 
+// Fix: Force blur active inputs when interacting with the canvas
+document.addEventListener('mousedown', (e) => {
+  const activeEl = document.activeElement;
+  
+  // Check if an input or textarea currently has focus
+  if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+    
+    // If the new click is NOT on another UI control (input/button/etc)
+    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON') {
+      activeEl.blur(); // Manually remove focus from the color box
+    }
+    
+  }
+}, true); // 'true' runs this in the capture phase, guaranteeing it fires BEFORE any e.preventDefault()
+
 // ===================== DELETE KEY HANDLER =====================
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -2548,6 +2757,7 @@ window.addEventListener('mousemove', (e) => {
         selectTextBox(cloneId);
       });
       updateLabel();
+      syncFormatUIToSelection();
     }
 
     // Move the clones (frames + text boxes) with alignment snapping
@@ -2566,11 +2776,10 @@ window.addEventListener('mousemove', (e) => {
     const side = frameStretchSide;
 
     // Compute snapped dx/dy with edge alignment
+    const shiftConstrain = e.shiftKey;
     const excludeFrames = new Set(frameStretchStartStates.keys());
     const excludeText = frameStretchStartTextStates ? new Set(frameStretchStartTextStates.keys()) : new Set();
-    const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText);
-
-    const shiftConstrain = e.shiftKey;
+    const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText, shiftConstrain);
 
     // Apply stretch to all selected frames
     frameStretchStartStates.forEach((start, idx) => {
@@ -2786,6 +2995,7 @@ window.addEventListener('mouseup', (e) => {
           }
         }
         updateLabel();
+        syncFormatUIToSelection();
       }
     }
     duplicating = false;
@@ -3081,6 +3291,26 @@ function generateCanvasBlob(includeBackground) {
           ctx.drawImage(s.img, 0, 0);
         }
         ctx.restore();
+
+        // Draw user border (after restore, so it's not clipped for rect frames;
+        // for shaped frames we draw inside a clip)
+        if (s.borderEnabled && s.borderWidth > 0) {
+          ctx.save();
+          ctx.translate(cfg.x, cfg.y);
+          ctx.strokeStyle = s.borderColor;
+          ctx.lineWidth = s.borderWidth;
+          if (sp) {
+            // Shaped: stroke inside the shape path
+            ctx.lineWidth = s.borderWidth * 2; // half will be outside, clipped
+            ctx.clip(new Path2D(sp));
+            ctx.stroke(new Path2D(sp));
+          } else {
+            // Rectangular: inset border
+            const hw = s.borderWidth / 2;
+            ctx.strokeRect(hw, hw, cfg.w - s.borderWidth, cfg.h - s.borderWidth);
+          }
+          ctx.restore();
+        }
       });
 
       // ---- Draw text boxes on top ----
@@ -3994,31 +4224,63 @@ window.addEventListener('keydown', (e) => {
 function syncFormatUIToSelection() {
   const section = document.getElementById('textFormatSection');
   const colorSection = document.getElementById('textColorSection');
+  const borderSection = document.getElementById('borderWeightSection');
 
-  if (selectedTextBoxIds.size === 0) {
+  const hasText = selectedTextBoxIds.size > 0;
+  const hasFrames = selectedIndices.size > 0;
+  const onlyFrames = hasFrames && !hasText;
+
+  // Text format: only when text boxes are selected
+  if (hasText) {
+    section.classList.remove('rs-disabled');
+  } else {
     section.classList.add('rs-disabled');
-    colorSection.classList.add('rs-disabled');
-    return;
   }
-  section.classList.remove('rs-disabled');
-  colorSection.classList.remove('rs-disabled');
 
-  // Use the first selected text box as reference
-  const firstId = [...selectedTextBoxIds][0];
-  const tb = getTextBoxById(firstId);
-  if (!tb) return;
+  // Color: active when anything is selected
+  if (hasText || hasFrames) {
+    colorSection.classList.remove('rs-disabled');
+  } else {
+    colorSection.classList.add('rs-disabled');
+  }
 
-  document.getElementById('rsFontFamily').value = tb.fontName;
-  document.getElementById('rsFontSize').value = tb.fontSize;
-  document.getElementById('rsBold').classList.toggle('active', tb.bold);
-  document.getElementById('rsItalic').classList.toggle('active', tb.italic);
-  document.getElementById('rsUnderline').classList.toggle('active', tb.underline);
-  document.getElementById('rsAlignLeft').classList.toggle('active', tb.align === 'left');
-  document.getElementById('rsAlignCenter').classList.toggle('active', tb.align === 'center');
-  document.getElementById('rsAlignRight').classList.toggle('active', tb.align === 'right');
+  // Border weight: only when frames are selected and NO text boxes
+  if (onlyFrames) {
+    borderSection.classList.remove('rs-disabled');
+    // Sync border UI from first selected frame
+    const firstIdx = [...selectedIndices][0];
+    const s = cells[firstIdx];
+    if (s) {
+      document.getElementById('rsBorderToggle').checked = s.borderEnabled;
+      document.getElementById('rsBorderWeight').value = s.borderWidth;
+    }
+  } else {
+    borderSection.classList.add('rs-disabled');
+  }
 
-  // Color
-  updateColorUI(tb.fontColor);
+  if (!hasText && !hasFrames) return;
+
+  // Sync text format UI from first selected text box
+  if (hasText) {
+    const firstId = [...selectedTextBoxIds][0];
+    const tb = getTextBoxById(firstId);
+    if (!tb) return;
+
+    document.getElementById('rsFontFamily').value = tb.fontName;
+    document.getElementById('rsFontSize').value = tb.fontSize;
+    document.getElementById('rsBold').classList.toggle('active', tb.bold);
+    document.getElementById('rsItalic').classList.toggle('active', tb.italic);
+    document.getElementById('rsUnderline').classList.toggle('active', tb.underline);
+    document.getElementById('rsAlignLeft').classList.toggle('active', tb.align === 'left');
+    document.getElementById('rsAlignCenter').classList.toggle('active', tb.align === 'center');
+    document.getElementById('rsAlignRight').classList.toggle('active', tb.align === 'right');
+    updateColorUI(tb.fontColor);
+  } else if (hasFrames) {
+    // Show frame border color in color UI
+    const firstIdx = [...selectedIndices][0];
+    const s = cells[firstIdx];
+    if (s) updateColorUI(s.borderColor);
+  }
 }
 
 function updateColorUI(color) {
@@ -4040,6 +4302,46 @@ function applyToSelectedTextBoxes(fn) {
     if (tb) fn(tb);
   });
   syncFormatUIToSelection();
+}
+
+// Apply border color to all selected frames
+function applyColorToSelectedFrames(color) {
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s) return;
+    s.borderColor = color;
+    if (!s.borderEnabled) {
+      s.borderEnabled = true;
+      s.borderWidth = s.borderWidth || DEFAULT_FRAME_BORDER_WIDTH;
+    }
+    applyUserBorder(s);
+  });
+  syncFormatUIToSelection();
+}
+
+// Apply a combined color change to both text boxes and frames
+function applyColorToSelection(color) {
+  // Apply to text boxes
+  selectedTextBoxIds.forEach(id => {
+    const tb = getTextBoxById(id);
+    if (tb) {
+      tb.fontColor = color;
+      tb.contentEl.style.color = color;
+    }
+  });
+  // Apply to frames (border color)
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s) return;
+    s.borderColor = color;
+    if (!s.borderEnabled) {
+      s.borderEnabled = true;
+      s.borderWidth = s.borderWidth || DEFAULT_FRAME_BORDER_WIDTH;
+    }
+    applyUserBorder(s);
+  });
+  syncFormatUIToSelection();
+  updateColorUI(color);
 }
 
 // ===================== RIGHT SIDEBAR WIRING =====================
@@ -4120,23 +4422,14 @@ DEFAULT_COLOR_PALETTE.forEach(color => {
   sw.style.background = color;
   sw.dataset.color = color;
   sw.addEventListener('click', () => {
-    applyToSelectedTextBoxes(tb => {
-      tb.fontColor = color;
-      tb.contentEl.style.color = color;
-    });
-    updateColorUI(color);
+    applyColorToSelection(color);
   });
   swatchContainer.appendChild(sw);
 });
 
 // Custom color picker
 document.getElementById('rsColorPicker').addEventListener('input', (e) => {
-  const color = e.target.value;
-  applyToSelectedTextBoxes(tb => {
-    tb.fontColor = color;
-    tb.contentEl.style.color = color;
-  });
-  updateColorUI(color);
+  applyColorToSelection(e.target.value);
 });
 
 // Hex input
@@ -4144,12 +4437,33 @@ document.getElementById('rsHexInput').addEventListener('change', (e) => {
   let val = e.target.value.trim();
   if (!val.startsWith('#')) val = '#' + val;
   if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-    applyToSelectedTextBoxes(tb => {
-      tb.fontColor = val;
-      tb.contentEl.style.color = val;
-    });
-    updateColorUI(val);
+    applyColorToSelection(val);
   }
+});
+
+// ===================== BORDER WEIGHT CONTROLS =====================
+document.getElementById('rsBorderToggle').addEventListener('change', (e) => {
+  const enabled = e.target.checked;
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s) return;
+    s.borderEnabled = enabled;
+    if (enabled && !s.borderWidth) s.borderWidth = DEFAULT_FRAME_BORDER_WIDTH;
+    applyUserBorder(s);
+  });
+  syncFormatUIToSelection();
+});
+
+document.getElementById('rsBorderWeight').addEventListener('change', (e) => {
+  const weight = parseFloat(e.target.value);
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s) return;
+    s.borderWidth = weight;
+    if (!s.borderEnabled) s.borderEnabled = true;
+    applyUserBorder(s);
+  });
+  syncFormatUIToSelection();
 });
 
 // ===================== TEXT BOX DRAG/RESIZE IN GLOBAL HANDLERS =====================
@@ -4386,6 +4700,7 @@ document.getElementById('rightSidebar').addEventListener('mousedown', (e) => {
 // Initialize format section as disabled
 document.getElementById('textFormatSection').classList.add('rs-disabled');
 document.getElementById('textColorSection').classList.add('rs-disabled');
+document.getElementById('borderWeightSection').classList.add('rs-disabled');
 
 // ===================== DOWNLOAD HANDLER =====================
 document.getElementById('downloadBtn').addEventListener('click', async () => {
