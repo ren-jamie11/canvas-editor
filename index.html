@@ -1224,6 +1224,7 @@ const ALIGNMENT_CLICK_PIXELS = 8;
 // object's edge before it snaps into alignment.
 const ALIGNMENT_STRETCH_CLICK_PIXELS = 8;
 
+const ALIGNMENT_EDGE_CLICK_PIXELS = 8;
 // Controls how close (in pixels) a frame's width must be to its height
 // before it snaps to square proportions during stretching.
 const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 8;
@@ -1320,19 +1321,24 @@ function getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositi
 // compute snapped dx/dy by checking EACH dragged object individually
 // against all targets. The closest snap wins. Show guide lines for
 // all alignments that match after snapping.
+// Given raw dx/dy deltas and the sets of objects being dragged,
+// compute snapped dx/dy by checking EACH dragged object individually
+// against all targets. The closest snap wins. Show guide lines for
+// all alignments that match after snapping.
 function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, startPositionsFrames, startPositionsTextBoxes) {
   const centers = getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositionsTextBoxes);
-  if (centers.length === 0) return { dx: rawDx, dy: rawDy };
-
+  
   const targets = getAlignmentTargets(dragFrameIndices, dragTextBoxIds);
-  if (targets.length === 0) return { dx: rawDx, dy: rawDy };
+  // Fetch edge targets for the new edge snapping behavior
+  const { hEdges, vEdges } = getEdgeAlignmentTargets(dragFrameIndices, dragTextBoxIds);
 
   // Find the smallest snap correction across all dragged objects
-  let bestSnapDxCorrection = null; // correction to add to rawDx
+  let bestSnapDxCorrection = null; 
   let bestSnapDxDist = Infinity;
   let bestSnapDyCorrection = null;
   let bestSnapDyDist = Infinity;
 
+  // 1. Check center alignments (Existing behavior)
   for (const c of centers) {
     for (const t of targets) {
       const distX = Math.abs(c.cx - t.cx);
@@ -1348,20 +1354,82 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
     }
   }
 
+  // 2. Check edge alignments (New behavior) - strictly for frames
+  if (startPositionsFrames) {
+    startPositionsFrames.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      const projectedX = start.x + rawDx;
+      const projectedY = start.y + rawDy;
+      const projectedRight = projectedX + s.cfg.w;
+      const projectedBottom = projectedY + s.cfg.h;
+      
+      // Check vertical edges (x-axis snap)
+      const checkVEdge = (edgeX) => {
+        for (const ve of vEdges) {
+          const dist = Math.abs(edgeX - ve);
+          if (dist < ALIGNMENT_EDGE_CLICK_PIXELS && dist < bestSnapDxDist) {
+            bestSnapDxDist = dist;
+            bestSnapDxCorrection = ve - edgeX;
+          }
+        }
+      };
+      
+      // Check horizontal edges (y-axis snap)
+      const checkHEdge = (edgeY) => {
+        for (const he of hEdges) {
+          const dist = Math.abs(edgeY - he);
+          if (dist < ALIGNMENT_EDGE_CLICK_PIXELS && dist < bestSnapDyDist) {
+            bestSnapDyDist = dist;
+            bestSnapDyCorrection = he - edgeY;
+          }
+        }
+      };
+
+      checkVEdge(projectedX);
+      checkVEdge(projectedRight);
+      checkHEdge(projectedY);
+      checkHEdge(projectedBottom);
+    });
+  }
+
   const snapDx = bestSnapDxCorrection !== null ? rawDx + bestSnapDxCorrection : rawDx;
   const snapDy = bestSnapDyCorrection !== null ? rawDy + bestSnapDyCorrection : rawDy;
 
-  // Now recompute centers with snapped deltas to find ALL active guide lines
+  // Now recompute centers and edges with snapped deltas to find ALL active guide lines
   const snappedCenters = getDraggedObjectCenters(snapDx, snapDy, startPositionsFrames, startPositionsTextBoxes);
 
   // Collect unique guide positions (deduplicate to nearest pixel)
   const guideHSet = new Set();
   const guideVSet = new Set();
+  
+  // Plot Center guides
   for (const c of snappedCenters) {
     for (const t of targets) {
       if (Math.abs(c.cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
       if (Math.abs(c.cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
     }
+  }
+
+  // Plot Edge guides (only for dragged frames)
+  if (startPositionsFrames) {
+    startPositionsFrames.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      const snappedX = start.x + snapDx;
+      const snappedY = start.y + snapDy;
+      const snappedRight = snappedX + s.cfg.w;
+      const snappedBottom = snappedY + s.cfg.h;
+      
+      for (const ve of vEdges) {
+        if (Math.abs(snappedX - ve) < 0.5) guideVSet.add(Math.round(ve));
+        if (Math.abs(snappedRight - ve) < 0.5) guideVSet.add(Math.round(ve));
+      }
+      for (const he of hEdges) {
+        if (Math.abs(snappedY - he) < 0.5) guideHSet.add(Math.round(he));
+        if (Math.abs(snappedBottom - he) < 0.5) guideHSet.add(Math.round(he));
+      }
+    });
   }
 
   const guideHArr = [...guideHSet];
@@ -1455,6 +1523,9 @@ function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
 // Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
 // each stretched object's active edges against all target edges.
 // Returns { dx, dy } with snap corrections applied.
+// Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
+// each stretched object's active edges against all target edges.
+// Returns { dx, dy } with snap corrections applied.
 function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds, shiftConstrain) {
   const { hEdges, vEdges } = getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds);
 
@@ -1466,7 +1537,7 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
   let bestDxCorrection = null, bestDxDist = Infinity;
   let bestDyCorrection = null, bestDyDist = Infinity;
 
-  // Helper: compute projected geometry for a frame given dx/dy, including shift-constrain
+  // Helper: compute projected geometry for a frame given dx/dy, including shift-constrain and soft-snap
   function projectFrame(start, projDx, projDy) {
     let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
     if (side === 'r') { newW = start.w + projDx; }
@@ -1478,18 +1549,38 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
     else if (side === 'tr') { newW = start.w + projDx; newH = start.h - projDy; newY = start.y + projDy; }
     else if (side === 'tl') { newW = start.w - projDx; newH = start.h - projDy; newX = start.x + projDx; newY = start.y + projDy; }
 
-    // Apply shift-constrain so projected geometry reflects what the user sees
+    if (newW < 30) { newW = 30; if (side.includes('l')) newX = start.x + start.w - 30; }
+    if (newH < 30) { newH = 30; if (side.includes('t')) newY = start.y + start.h - 30; }
+
+    const softSnap = !shiftConstrain && (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30);
+    let constrained = false;
+
     if (shiftConstrain) {
+      constrained = true;
       if (side === 'l' || side === 'r') { newH = newW; }
       else if (side === 't' || side === 'b') { newW = newH; }
       else {
         const target = Math.max(newW, newH);
-        newW = target; newH = target;
+        if (newW < target) { const diff = target - newW; newW = target; if (side.includes('l')) newX -= diff; }
+        if (newH < target) { const diff = target - newH; newH = target; if (side.includes('t')) newY -= diff; }
+      }
+    } else if (softSnap) {
+      constrained = true;
+      if (side === 'l' || side === 'r') {
+        const diff = newH - newW; newW = newH; if (side === 'l') newX -= diff;
+      } else if (side === 't' || side === 'b') {
+        const diff = newW - newH; newH = newW; if (side === 't') newY -= diff;
+      } else {
+        const target = Math.max(newW, newH);
+        if (newW < target) { const diff = target - newW; newW = target; if (side.includes('l')) newX -= diff; }
+        if (newH < target) { const diff = target - newH; newH = target; if (side.includes('t')) newY -= diff; }
       }
     }
 
-    return { newX, newY, newW, newH };
+    return { newX, newY, newW, newH, constrained };
   }
+
+  let isConstrained = false;
 
   // Check each stretched frame's active edges
   if (stretchStartStates) {
@@ -1497,14 +1588,12 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       const s = cells[idx];
       if (!s) return;
 
-      const { newX, newY, newW, newH } = projectFrame(start, rawDx, rawDy);
+      const { newX, newY, newW, newH, constrained } = projectFrame(start, rawDx, rawDy);
+      if (constrained) isConstrained = true;
 
       // Check vertical edges (left/right of object → snap dx)
       if (canSnapX) {
-        // For edge handles like 't' or 'b' with shift, the right edge moves too
-        const activeXEdge = side.includes('l') ? newX :
-                            side.includes('r') ? newX + newW :
-                            newX + newW; // shift: non-l defaults to right edge
+        const activeXEdge = side.includes('l') ? newX : side.includes('r') ? newX + newW : newX + newW;
         for (const ve of vEdges) {
           const dist = Math.abs(activeXEdge - ve);
           if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist) {
@@ -1512,18 +1601,11 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
             bestDxCorrection = ve - activeXEdge;
           }
         }
-        // For shift + vertical edge handles, also check the left edge if it moves
-        if (shiftConstrain && !side.includes('l') && !side.includes('r')) {
-          // Width changed but x didn't — check right edge (already done above)
-          // No need to check left edge since it stays fixed for t/b handles
-        }
       }
 
       // Check horizontal edges (top/bottom of object → snap dy)
       if (canSnapY) {
-        const activeYEdge = side.includes('t') ? newY :
-                            side.includes('b') ? newY + newH :
-                            newY + newH; // shift: non-t defaults to bottom edge
+        const activeYEdge = side.includes('t') ? newY : side.includes('b') ? newY + newH : newY + newH;
         for (const he of hEdges) {
           const dist = Math.abs(activeYEdge - he);
           if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDyDist) {
@@ -1558,28 +1640,35 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
   // Apply corrections to raw deltas
   let snapDx = rawDx, snapDy = rawDy;
 
-  // For shift+edge handles, a snap on the secondary axis must be converted
-  // to a correction on the primary axis (since the secondary axis delta is unused
-  // in the raw geometry — the secondary dimension follows via shift-constrain).
-  if (shiftConstrain && (side === 'l' || side === 'r' || side === 't' || side === 'b')) {
-    if ((side === 'l' || side === 'r') && bestDyCorrection !== null) {
-      // Bottom/top edge snapped. Convert to dx correction.
-      // With shift: newH = newW = start.w ± dx. Bottom edge = start.y + newW.
-      // Desired: bottom edge at (projected bottom + bestDyCorrection).
-      // So: start.y + (start.w + snapDx) = start.y + (start.w + rawDx) + bestDyCorrection
-      // → snapDx = rawDx + bestDyCorrection
-      // Only apply if there's no closer direct dx correction
-      if (bestDxCorrection === null || Math.abs(bestDyCorrection) < Math.abs(bestDxCorrection)) {
-        bestDxCorrection = bestDyCorrection;
+  // Handle corner/constrained snapping conflict
+  if (isConstrained || shiftConstrain) {
+    if (side === 'l' || side === 'r' || side === 't' || side === 'b') {
+      if ((side === 'l' || side === 'r') && bestDyCorrection !== null) {
+        if (bestDxCorrection === null || Math.abs(bestDyCorrection) < Math.abs(bestDxCorrection)) {
+          bestDxCorrection = bestDyCorrection;
+        }
+        bestDyCorrection = null;
       }
-      bestDyCorrection = null; // dy doesn't affect geometry for l/r handles
-    }
-    if ((side === 't' || side === 'b') && bestDxCorrection !== null) {
-      // Left/right edge snapped. Convert to dy correction.
-      if (bestDyCorrection === null || Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
-        bestDyCorrection = bestDxCorrection;
+      if ((side === 't' || side === 'b') && bestDxCorrection !== null) {
+        if (bestDyCorrection === null || Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
+          bestDyCorrection = bestDxCorrection;
+        }
+        bestDxCorrection = null;
       }
-      bestDxCorrection = null; // dx doesn't affect geometry for t/b handles
+    } else {
+      // Corner handles under constraints (Both axes force newW == newH)
+      // Correction on X must ALSO apply to Y to preserve the square proportions.
+      if (bestDxCorrection !== null && bestDyCorrection !== null) {
+        if (Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
+          bestDyCorrection = side.includes('t') === side.includes('l') ? bestDxCorrection : -bestDxCorrection;
+        } else {
+          bestDxCorrection = side.includes('t') === side.includes('l') ? bestDyCorrection : -bestDyCorrection;
+        }
+      } else if (bestDxCorrection !== null) {
+        bestDyCorrection = side.includes('t') === side.includes('l') ? bestDxCorrection : -bestDxCorrection;
+      } else if (bestDyCorrection !== null) {
+        bestDxCorrection = side.includes('t') === side.includes('l') ? bestDyCorrection : -bestDyCorrection;
+      }
     }
   }
 
@@ -1599,17 +1688,13 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       const { newX, newY, newW, newH } = projectFrame(start, snapDx, snapDy);
 
       if (canSnapX) {
-        const activeXEdge = side.includes('l') ? newX :
-                            side.includes('r') ? newX + newW :
-                            newX + newW;
+        const activeXEdge = side.includes('l') ? newX : side.includes('r') ? newX + newW : newX + newW;
         for (const ve of vEdges) {
           if (Math.abs(activeXEdge - ve) < 0.5) guideVSet.add(Math.round(ve));
         }
       }
       if (canSnapY) {
-        const activeYEdge = side.includes('t') ? newY :
-                            side.includes('b') ? newY + newH :
-                            newY + newH;
+        const activeYEdge = side.includes('t') ? newY : side.includes('b') ? newY + newH : newY + newH;
         for (const he of hEdges) {
           if (Math.abs(activeYEdge - he) < 0.5) guideHSet.add(Math.round(he));
         }
@@ -4052,6 +4137,7 @@ function exitShapeDrawMode() {
   shapeDrawType = null;
   canvasArea.classList.remove('shape-draw-mode');
   document.querySelectorAll('.rs-shape-btn').forEach(b => b.classList.remove('active'));
+  hideGuides();
 }
 
 // Shape button click handlers
@@ -4075,8 +4161,16 @@ canvasArea.addEventListener('mousedown', (e) => {
   e.stopPropagation();
 
   const rect = canvasArea.getBoundingClientRect();
-  shapeCreateStartX = e.clientX - rect.left;
-  shapeCreateStartY = e.clientY - rect.top;
+  let startX = e.clientX - rect.left;
+  let startY = e.clientY - rect.top;
+
+  // Snap start position to nearby edges
+  const snapped = snapCoordsToEdges(startX, startY, true);
+  startX = snapped.x;
+  startY = snapped.y;
+
+  shapeCreateStartX = startX;
+  shapeCreateStartY = startY;
   shapeCreateDragging = true;
 
   shapeCreatePreviewEl = document.createElement('div');
@@ -4094,6 +4188,63 @@ canvasArea.addEventListener('mousedown', (e) => {
 
   deselectAll();
 }, true);
+
+// Helper: snap a coordinate pair to nearby frame/text box edges and show guide lines
+function snapCoordsToEdges(x, y, showGuides) {
+  const { hEdges, vEdges } = getEdgeAlignmentTargets(new Set(), new Set());
+  let snappedX = x, snappedY = y;
+  let snappedToV = null, snappedToH = null;
+
+  let bestDx = Infinity;
+  for (const ve of vEdges) {
+    const dist = Math.abs(x - ve);
+    if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDx) {
+      bestDx = dist;
+      snappedX = ve;
+      snappedToV = ve;
+    }
+  }
+
+  let bestDy = Infinity;
+  for (const he of hEdges) {
+    const dist = Math.abs(y - he);
+    if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDy) {
+      bestDy = dist;
+      snappedY = he;
+      snappedToH = he;
+    }
+  }
+
+  if (showGuides) {
+    // Show vertical guide if snapped to a vertical edge
+    if (snappedToV !== null) {
+      const g = ensureGuideV(0);
+      g.style.left = snappedToV + 'px';
+      g.style.display = '';
+    } else if (activeGuideVs.length > 0) {
+      activeGuideVs[0].style.display = 'none';
+    }
+    // Hide extra vertical guides
+    for (let i = 1; i < activeGuideVs.length; i++) {
+      activeGuideVs[i].style.display = 'none';
+    }
+
+    // Show horizontal guide if snapped to a horizontal edge
+    if (snappedToH !== null) {
+      const g = ensureGuideH(0);
+      g.style.top = snappedToH + 'px';
+      g.style.display = '';
+    } else if (activeGuideHs.length > 0) {
+      activeGuideHs[0].style.display = 'none';
+    }
+    // Hide extra horizontal guides
+    for (let i = 1; i < activeGuideHs.length; i++) {
+      activeGuideHs[i].style.display = 'none';
+    }
+  }
+
+  return { x: snappedX, y: snappedY };
+}
 
 // Helper: compute draw rect, optionally constraining to square proportions
 function getShapeDrawRect(startX, startY, curX, curY, constrain) {
@@ -4117,8 +4268,13 @@ window.addEventListener('mousemove', (e) => {
   if (!shapeCreateDragging || !shapeCreatePreviewEl) return;
 
   const rect = canvasArea.getBoundingClientRect();
-  const currentX = e.clientX - rect.left;
-  const currentY = e.clientY - rect.top;
+  let currentX = e.clientX - rect.left;
+  let currentY = e.clientY - rect.top;
+
+  // Snap current cursor position to nearby edges (no guides yet — we'll show them for the rect)
+  const snapped = snapCoordsToEdges(currentX, currentY, false);
+  currentX = snapped.x;
+  currentY = snapped.y;
 
   const { left, top, width, height } = getShapeDrawRect(
     shapeCreateStartX, shapeCreateStartY, currentX, currentY, e.shiftKey
@@ -4129,6 +4285,9 @@ window.addEventListener('mousemove', (e) => {
   shapeCreatePreviewEl.style.width = width + 'px';
   shapeCreatePreviewEl.style.height = height + 'px';
 
+  // Show guide lines for all edges of the drawn rect that align with existing edges
+  showDrawRectGuides(left, top, width, height);
+
   // Update SVG shape preview for non-square shapes
   const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
   if (shapeKey && width > 0 && height > 0) {
@@ -4138,6 +4297,59 @@ window.addEventListener('mousemove', (e) => {
       shapeCreatePreviewEl.innerHTML = `<svg viewBox="0 0 ${width} ${height}"><path class="preview-path" d="${sp}"/></svg>`;
     }
   }
+});
+
+// Show guide lines for all edges of a drawn rect that align with existing edges
+function showDrawRectGuides(left, top, width, height) {
+  const { hEdges, vEdges } = getEdgeAlignmentTargets(new Set(), new Set());
+  const rectEdges = {
+    left: left,
+    right: left + width,
+    top: top,
+    bottom: top + height,
+  };
+
+  const guideVSet = new Set();
+  const guideHSet = new Set();
+
+  for (const ve of vEdges) {
+    if (Math.abs(rectEdges.left - ve) < 0.5) guideVSet.add(Math.round(ve));
+    if (Math.abs(rectEdges.right - ve) < 0.5) guideVSet.add(Math.round(ve));
+  }
+  for (const he of hEdges) {
+    if (Math.abs(rectEdges.top - he) < 0.5) guideHSet.add(Math.round(he));
+    if (Math.abs(rectEdges.bottom - he) < 0.5) guideHSet.add(Math.round(he));
+  }
+
+  const guideVArr = [...guideVSet];
+  const guideHArr = [...guideHSet];
+
+  guideVArr.forEach((x, i) => {
+    const g = ensureGuideV(i);
+    g.style.left = x + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideVArr.length; i < activeGuideVs.length; i++) {
+    activeGuideVs[i].style.display = 'none';
+  }
+
+  guideHArr.forEach((y, i) => {
+    const g = ensureGuideH(i);
+    g.style.top = y + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideHArr.length; i < activeGuideHs.length; i++) {
+    activeGuideHs[i].style.display = 'none';
+  }
+}
+
+// Hover snap: show guide lines when cursor is near edges while in shape draw mode (before click)
+canvasArea.addEventListener('mousemove', (e) => {
+  if (!shapeDrawMode || shapeCreateDragging) return;
+  const rect = canvasArea.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  snapCoordsToEdges(x, y, true);
 });
 
 // Mouseup: create the frame
@@ -4151,8 +4363,14 @@ window.addEventListener('mouseup', (e) => {
   }
 
   const rect = canvasArea.getBoundingClientRect();
-  const endX = e.clientX - rect.left;
-  const endY = e.clientY - rect.top;
+  let endX = e.clientX - rect.left;
+  let endY = e.clientY - rect.top;
+
+  // Snap end position to nearby edges (no guides since mode exits immediately)
+  const snapped = snapCoordsToEdges(endX, endY, false);
+  endX = snapped.x;
+  endY = snapped.y;
+  hideGuides();
 
   const { left: x, top: y, width: w, height: h } = getShapeDrawRect(
     shapeCreateStartX, shapeCreateStartY, endX, endY, e.shiftKey
