@@ -877,6 +877,48 @@
     width: 0;
     border-left: 1px dashed rgba(255, 80, 120, 0.7);
   }
+
+  /* Equidistance indicator — pink dashed segment spanning one of the
+     two equal gaps, with tick marks at each end (same pink as guides). */
+  .equidistance-indicator {
+    position: absolute;
+    pointer-events: none;
+    z-index: 301;
+  }
+  .equidistance-indicator.eq-h {
+    /* Horizontal gap indicator: a horizontal dashed line at a given Y,
+       spanning from a given X to another X. */
+    height: 0;
+    border-top: 1.5px dashed rgba(255, 80, 120, 0.95);
+  }
+  .equidistance-indicator.eq-v {
+    /* Vertical gap indicator: a vertical dashed line at a given X. */
+    width: 0;
+    border-left: 1.5px dashed rgba(255, 80, 120, 0.95);
+  }
+  /* End-cap ticks perpendicular to the dashed segment. */
+  .equidistance-indicator.eq-h::before,
+  .equidistance-indicator.eq-h::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    width: 0;
+    height: 12px;
+    border-left: 1.5px solid rgba(255, 80, 120, 0.95);
+  }
+  .equidistance-indicator.eq-h::before { left: 0; }
+  .equidistance-indicator.eq-h::after { right: 0; }
+  .equidistance-indicator.eq-v::before,
+  .equidistance-indicator.eq-v::after {
+    content: '';
+    position: absolute;
+    left: -6px;
+    height: 0;
+    width: 12px;
+    border-top: 1.5px solid rgba(255, 80, 120, 0.95);
+  }
+  .equidistance-indicator.eq-v::before { top: 0; }
+  .equidistance-indicator.eq-v::after { bottom: 0; }
 </style>
 </head>
 <body>
@@ -1251,34 +1293,34 @@ const SHAPES = {
 };
 
 const TEMPLATES = [
-     {
-    name: 'Custom Template',
-    description: '1464×3000 · 10 frames',
-    canvasW: 1464,
-    canvasH: 3000,
-    bgColor: '#ffffff',
-    bgImage: null,
-    frames: [
-      { x: 0, y: 0, w: 1464, h: 587, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 2410, w: 1464, h: 590, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1187, w: 1464, h: 650, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 722, w: 337, h: 337, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1847, w: 471, h: 549, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 993, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 497, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 375, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 752, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 1127, y: 722, w: 337, h: 337, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
-    ],
-    textBoxes: [
-      { x: 531, y: 637, width: 403, text: "Product Detail", fontName: 'DM Sans', fontSize: 36, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 40, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 415, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
-    ],
+  {
+  name: 'Custom Template 1 (Scaled 50%)',
+  description: '732×1500 · 10 frames',
+  canvasW: 732,
+  canvasH: 1500,
+  bgColor: '#ffffff',
+  bgImage: null,
+  frames: [
+    { x: 0, y: 0, w: 732, h: 313.5, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 0, y: 1201, w: 732, h: 299, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 0, y: 571.5, w: 732, h: 339, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 0, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 0, y: 917.5, w: 235.5, h: 274.5, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 496.5, y: 917.5, w: 235.5, h: 274.5, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 248.5, y: 917.5, w: 235.5, h: 274.5, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 187.5, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 376, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+    { x: 563.5, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+  ],
+  textBoxes: [
+    { x: 265.5, y: 324.5, width: 201.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 18, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+    { x: 20, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+    { x: 207.5, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+    { x: 396, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+    { x: 583.5, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' }
+  ]
   },
-    {
+  {
     name: 'Custom Template 1',
     description: '1464×3000 · 10 frames',
     canvasW: 1464,
@@ -1304,7 +1346,7 @@ const TEMPLATES = [
       { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
       { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' }
     ],
-  },
+  }
 ];
 
 const FRAME_BORDER_WIDTH = 1.5;
@@ -1452,6 +1494,18 @@ const ALIGNMENT_EDGE_CLICK_PIXELS = 8;
 const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 8;
 const ARROW_KEY_MOVE_PIXELS = 3;
 
+// Equidistance spacing snap — when the selected object's edge-to-neighbor
+// gaps on two sides are nearly equal, snap to exact equidistance.
+const EQUIDISTANCE_SNAP_PIXELS = 5;   // neighbourhood size for the snap
+const EQUIDISTANCE_MAX_DISTANCE = 500; // disable if either gap exceeds this
+
+// Center alignment only applies when two objects are reasonably close.
+// Measured as the gap between their nearest edges along the axis
+// perpendicular to the alignment line (Y-gap for vertical-center alignment,
+// X-gap for horizontal-center alignment). Objects farther apart than this
+// don't snap/guide on centers.
+const CENTER_ALIGN_MAX_DISTANCE = 600;
+
 let activeGuideHs = [];
 let activeGuideVs = [];
 
@@ -1480,6 +1534,10 @@ function ensureGuideV(index) {
 function hideGuides() {
   activeGuideHs.forEach(g => g.style.display = 'none');
   activeGuideVs.forEach(g => g.style.display = 'none');
+  // Equidistance indicators follow the same lifecycle as alignment guides.
+  if (typeof activeEquiIndicators !== 'undefined') {
+    activeEquiIndicators.forEach(el => el.style.display = 'none');
+  }
 }
 
 function removeGuideEls() {
@@ -1487,21 +1545,39 @@ function removeGuideEls() {
   activeGuideVs.forEach(g => g.remove());
   activeGuideHs = [];
   activeGuideVs = [];
+  if (typeof activeEquiIndicators !== 'undefined') {
+    activeEquiIndicators.forEach(el => el.remove());
+    activeEquiIndicators = [];
+  }
 }
 
 function getAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
   const targets = [];
-  targets.push({ cx: CANVAS_W / 2, cy: CANVAS_H / 2 });
+  // (Canvas center alignment intentionally not included — only object
+  // centers act as alignment targets.)
   cells.forEach((s, idx) => {
     if (excludeFrameIndices.has(idx)) return;
-    targets.push({ cx: s.cfg.x + s.cfg.w / 2, cy: s.cfg.y + s.cfg.h / 2 });
+    targets.push({
+      cx: s.cfg.x + s.cfg.w / 2,
+      cy: s.cfg.y + s.cfg.h / 2,
+      // Source rect so the obstruction check knows the candidate's footprint.
+      src: { x: s.cfg.x, y: s.cfg.y, w: s.cfg.w, h: s.cfg.h, frameIdx: idx },
+    });
   });
   const tbs = getTextBoxes();
   tbs.forEach(tb => {
     if (excludeTextBoxIds.has(tb.id)) return;
     const w = tb.width || tb.contentEl.offsetWidth;
     const h = tb.contentEl.offsetHeight;
-    targets.push({ cx: tb.x + w / 2, cy: tb.y + h / 2 });
+    targets.push({
+      cx: tb.x + w / 2,
+      cy: tb.y + h / 2,
+      // Text boxes are valid alignment references, but text boxes cannot
+      // act as obstructors — only frames can. `src` is still supplied so the
+      // obstruction test knows the candidate's range (used to compute the
+      // gap between the moving object and the candidate).
+      src: { x: tb.x, y: tb.y, w, h, frameIdx: -1 },
+    });
   });
   return targets;
 }
@@ -1544,15 +1620,57 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
   let bestSnapDyCorrection = null;
   let bestSnapDyDist = Infinity;
 
+  // Rects of each moving object — needed so the obstruction check can reason
+  // about the line-of-sight between the moving rect and the candidate.
+  const movingRects = [];
+  if (startPositionsFrames) {
+    startPositionsFrames.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      movingRects.push({
+        L: start.x + rawDx, T: start.y + rawDy,
+        R: start.x + rawDx + s.cfg.w, B: start.y + rawDy + s.cfg.h,
+      });
+    });
+  }
+  if (startPositionsTextBoxes) {
+    startPositionsTextBoxes.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      const w = tb.width || tb.contentEl.offsetWidth;
+      const h = tb.contentEl.offsetHeight;
+      movingRects.push({
+        L: start.x + rawDx, T: start.y + rawDy,
+        R: start.x + rawDx + w, B: start.y + rawDy + h,
+      });
+    });
+  }
+
+  // A candidate (center or edge) is valid only if, for EVERY moving object,
+  // the alignment line isn't obstructed by a third frame. Because the line
+  // must be unobstructed from each mover to the same target, we require all
+  // movers to have a clear path.
+  const vertLineValid = (x, src) => movingRects.every(r =>
+    !edgeAlignmentObstructed('v', x, r.L, r.T, r.R, r.B, src, dragFrameIndices));
+  const horzLineValid = (y, src) => movingRects.every(r =>
+    !edgeAlignmentObstructed('h', y, r.L, r.T, r.R, r.B, src, dragFrameIndices));
+  // Distance gates for CENTER alignment only (not edge alignment).
+  const centerVInRange = (src) => movingRects.every(r =>
+    !centerAlignmentTooFar('v', r.L, r.T, r.R, r.B, src));
+  const centerHInRange = (src) => movingRects.every(r =>
+    !centerAlignmentTooFar('h', r.L, r.T, r.R, r.B, src));
+
   for (const c of centers) {
     for (const t of targets) {
       const distX = Math.abs(c.cx - t.cx);
-      if (distX < ALIGNMENT_CLICK_PIXELS && distX < bestSnapDxDist) {
+      if (distX < ALIGNMENT_CLICK_PIXELS && distX < bestSnapDxDist &&
+          centerVInRange(t.src) && vertLineValid(t.cx, t.src)) {
         bestSnapDxDist = distX;
         bestSnapDxCorrection = t.cx - c.cx;
       }
       const distY = Math.abs(c.cy - t.cy);
-      if (distY < ALIGNMENT_CLICK_PIXELS && distY < bestSnapDyDist) {
+      if (distY < ALIGNMENT_CLICK_PIXELS && distY < bestSnapDyDist &&
+          centerHInRange(t.src) && horzLineValid(t.cy, t.src)) {
         bestSnapDyDist = distY;
         bestSnapDyCorrection = t.cy - c.cy;
       }
@@ -1570,20 +1688,22 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
       
       const checkVEdge = (edgeX) => {
         for (const ve of vEdges) {
-          const dist = Math.abs(edgeX - ve);
-          if (dist < ALIGNMENT_EDGE_CLICK_PIXELS && dist < bestSnapDxDist) {
+          const dist = Math.abs(edgeX - ve.x);
+          if (dist < ALIGNMENT_EDGE_CLICK_PIXELS && dist < bestSnapDxDist &&
+              vertLineValid(ve.x, ve.src)) {
             bestSnapDxDist = dist;
-            bestSnapDxCorrection = ve - edgeX;
+            bestSnapDxCorrection = ve.x - edgeX;
           }
         }
       };
       
       const checkHEdge = (edgeY) => {
         for (const he of hEdges) {
-          const dist = Math.abs(edgeY - he);
-          if (dist < ALIGNMENT_EDGE_CLICK_PIXELS && dist < bestSnapDyDist) {
+          const dist = Math.abs(edgeY - he.y);
+          if (dist < ALIGNMENT_EDGE_CLICK_PIXELS && dist < bestSnapDyDist &&
+              horzLineValid(he.y, he.src)) {
             bestSnapDyDist = dist;
-            bestSnapDyCorrection = he - edgeY;
+            bestSnapDyCorrection = he.y - edgeY;
           }
         }
       };
@@ -1600,13 +1720,48 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
 
   const snappedCenters = getDraggedObjectCenters(snapDx, snapDy, startPositionsFrames, startPositionsTextBoxes);
 
+  // Build snapped moving rects (used to re-validate obstruction at render time).
+  const snappedRects = [];
+  if (startPositionsFrames) {
+    startPositionsFrames.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      snappedRects.push({
+        L: start.x + snapDx, T: start.y + snapDy,
+        R: start.x + snapDx + s.cfg.w, B: start.y + snapDy + s.cfg.h,
+      });
+    });
+  }
+  if (startPositionsTextBoxes) {
+    startPositionsTextBoxes.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      const w = tb.width || tb.contentEl.offsetWidth;
+      const h = tb.contentEl.offsetHeight;
+      snappedRects.push({
+        L: start.x + snapDx, T: start.y + snapDy,
+        R: start.x + snapDx + w, B: start.y + snapDy + h,
+      });
+    });
+  }
+  const renderVLineValid = (x, src) => snappedRects.every(r =>
+    !edgeAlignmentObstructed('v', x, r.L, r.T, r.R, r.B, src, dragFrameIndices));
+  const renderHLineValid = (y, src) => snappedRects.every(r =>
+    !edgeAlignmentObstructed('h', y, r.L, r.T, r.R, r.B, src, dragFrameIndices));
+  const renderCenterVInRange = (src) => snappedRects.every(r =>
+    !centerAlignmentTooFar('v', r.L, r.T, r.R, r.B, src));
+  const renderCenterHInRange = (src) => snappedRects.every(r =>
+    !centerAlignmentTooFar('h', r.L, r.T, r.R, r.B, src));
+
   const guideHSet = new Set();
   const guideVSet = new Set();
   
   for (const c of snappedCenters) {
     for (const t of targets) {
-      if (Math.abs(c.cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
-      if (Math.abs(c.cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
+      if (Math.abs(c.cx - t.cx) < 0.5 && renderCenterVInRange(t.src) && renderVLineValid(t.cx, t.src))
+        guideVSet.add(Math.round(t.cx));
+      if (Math.abs(c.cy - t.cy) < 0.5 && renderCenterHInRange(t.src) && renderHLineValid(t.cy, t.src))
+        guideHSet.add(Math.round(t.cy));
     }
   }
 
@@ -1620,12 +1775,16 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
       const snappedBottom = snappedY + s.cfg.h;
       
       for (const ve of vEdges) {
-        if (Math.abs(snappedX - ve) < 0.5) guideVSet.add(Math.round(ve));
-        if (Math.abs(snappedRight - ve) < 0.5) guideVSet.add(Math.round(ve));
+        if (Math.abs(snappedX - ve.x) < 0.5 && renderVLineValid(ve.x, ve.src))
+          guideVSet.add(Math.round(ve.x));
+        if (Math.abs(snappedRight - ve.x) < 0.5 && renderVLineValid(ve.x, ve.src))
+          guideVSet.add(Math.round(ve.x));
       }
       for (const he of hEdges) {
-        if (Math.abs(snappedY - he) < 0.5) guideHSet.add(Math.round(he));
-        if (Math.abs(snappedBottom - he) < 0.5) guideHSet.add(Math.round(he));
+        if (Math.abs(snappedY - he.y) < 0.5 && renderHLineValid(he.y, he.src))
+          guideHSet.add(Math.round(he.y));
+        if (Math.abs(snappedBottom - he.y) < 0.5 && renderHLineValid(he.y, he.src))
+          guideHSet.add(Math.round(he.y));
       }
     });
   }
@@ -1652,6 +1811,250 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
   }
 
   return { dx: snapDx, dy: snapDy };
+}
+
+// Compose alignment snap with equidistance snap for a MOVE interaction.
+// - First runs primary alignment snap (the existing behavior, which renders
+//   alignment guide lines as a side effect).
+// - Then, on any axis where alignment did NOT already snap, tries
+//   equidistance snap and renders its indicator.
+// Call this wherever applyAlignmentSnap was previously called for moves.
+function applyMoveSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds,
+    startPositionsFrames, startPositionsTextBoxes) {
+  const { dx: alignDx, dy: alignDy } = applyAlignmentSnap(
+    rawDx, rawDy, dragFrameIndices, dragTextBoxIds,
+    startPositionsFrames, startPositionsTextBoxes);
+
+  const xAligned = Math.abs(alignDx - rawDx) > 0.001;
+  const yAligned = Math.abs(alignDy - rawDy) > 0.001;
+
+  // Only run equidistance on axes that haven't already been claimed by
+  // object-to-object alignment snapping.
+  if (xAligned && yAligned) {
+    hideEquiIndicators();
+    return { dx: alignDx, dy: alignDy };
+  }
+
+  const eq = applyEquidistanceSnapForMove(
+    alignDx, alignDy,
+    startPositionsFrames, startPositionsTextBoxes,
+    dragFrameIndices, dragTextBoxIds);
+
+  let finalDx = alignDx;
+  let finalDy = alignDy;
+  const snapsX = xAligned ? [] : eq.snapsX;
+  const snapsY = yAligned ? [] : eq.snapsY;
+  if (!xAligned) finalDx = eq.dx;
+  if (!yAligned) finalDy = eq.dy;
+
+  renderEquidistanceIndicators(snapsX, snapsY);
+  return { dx: finalDx, dy: finalDy };
+}
+
+// For STRETCH interactions: layer equidistance onto the result of
+// applyStretchAlignmentSnap. Only the edges actually being dragged can snap:
+// e.g. a right-edge stretch can only snap X (by moving R), not Y. When Shift
+// or Alt is held (aspect-constrained stretch), skip equidistance entirely
+// because a one-axis correction would break the constraint.
+function applyStretchMoveSnap(rawDx, rawDy, side, stretchStartStates,
+    stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds,
+    shiftConstrain, altConstrain) {
+  const primary = applyStretchAlignmentSnap(rawDx, rawDy, side,
+    stretchStartStates, stretchStartTextStates,
+    excludeFrameIndices, excludeTextBoxIds, shiftConstrain, altConstrain);
+
+  if (shiftConstrain || altConstrain) {
+    hideEquiIndicators();
+    return primary;
+  }
+  if (!stretchStartStates || stretchStartStates.size === 0) {
+    hideEquiIndicators();
+    return primary;
+  }
+
+  const movesLeft   = side.includes('l');
+  const movesRight  = side.includes('r');
+  const movesTop    = side.includes('t');
+  const movesBottom = side.includes('b');
+  const canSnapX = movesLeft || movesRight;
+  const canSnapY = movesTop || movesBottom;
+
+  const candidates = getEquidistanceFrameCandidates(excludeFrameIndices);
+  if (!candidates.length) {
+    hideEquiIndicators();
+    return primary;
+  }
+
+  // Project the rect under primary snap to see where the moving edges are.
+  // Then, per axis that can snap, compute what correction to the edge would
+  // achieve equidistance.
+  let bestXCorrection = 0, bestXMag = Infinity;
+  let bestYCorrection = 0, bestYMag = Infinity;
+  // Also track info for indicator rendering.
+  const pendingXSnaps = [];  // { rect, info } for the snapped position
+  const pendingYSnaps = [];
+
+  // Per the existing stretch logic, small primary-snapped rects are clamped
+  // to >=30. We mirror that here.
+  const projected = [];
+  stretchStartStates.forEach((start, idx) => {
+    let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
+    if (side === 'r')       { newW = start.w + primary.dx; }
+    else if (side === 'l')  { newW = start.w - primary.dx; newX = start.x + primary.dx; }
+    else if (side === 'b')  { newH = start.h + primary.dy; }
+    else if (side === 't')  { newH = start.h - primary.dy; newY = start.y + primary.dy; }
+    else if (side === 'br') { newW = start.w + primary.dx; newH = start.h + primary.dy; }
+    else if (side === 'bl') { newW = start.w - primary.dx; newH = start.h + primary.dy; newX = start.x + primary.dx; }
+    else if (side === 'tr') { newW = start.w + primary.dx; newH = start.h - primary.dy; newY = start.y + primary.dy; }
+    else if (side === 'tl') { newW = start.w - primary.dx; newH = start.h - primary.dy; newX = start.x + primary.dx; newY = start.y + primary.dy; }
+    if (newW < 30) { newW = 30; if (movesLeft) newX = start.x + start.w - 30; }
+    if (newH < 30) { newH = 30; if (movesTop)  newY = start.y + start.h - 30; }
+    projected.push({ idx, start, newX, newY, newW, newH });
+  });
+
+  // Find best correction per axis among all stretched frames.
+  projected.forEach(p => {
+    const L = p.newX, T = p.newY, R = p.newX + p.newW, B = p.newY + p.newH;
+
+    if (canSnapX) {
+      // For a stretch, the NON-moving X edge is fixed. Find flanks only on
+      // the moving side: if we're moving R, the right flank's left edge
+      // is where we can snap to. Left flank defines the "gap on the fixed
+      // side"; right flank defines the gap on the moving side.
+      // Equidistance: (L - leftFlankRightEdge) == (rightFlankLeftEdge - R).
+      // Solve for where the moving edge should land.
+      const midY = (T + B) / 2;
+      const sameRow = (c) => !(c.y + c.h <= T || c.y >= B);
+      const leftFlanks = [];
+      const rightFlanks = [];
+      for (const c of candidates) {
+        if (!sameRow(c)) continue;
+        const cR = c.x + c.w;
+        if (cR <= L) {
+          const gap = L - cR;
+          if (gap <= EQUIDISTANCE_MAX_DISTANCE) leftFlanks.push({ edge: cR, gap });
+        } else if (c.x >= R) {
+          const gap = c.x - R;
+          if (gap <= EQUIDISTANCE_MAX_DISTANCE) rightFlanks.push({ edge: c.x, gap });
+        }
+      }
+      if (leftFlanks.length && rightFlanks.length) {
+        for (const lf of leftFlanks) {
+          for (const rf of rightFlanks) {
+            // Desired state: lf.gap == rf.gap. Fixed-side flank stays put;
+            // the moving edge shifts to make gaps equal.
+            if (movesRight && !movesLeft) {
+              // R is free; L (and lf.gap) is fixed. Target R = rf.edge - lf.gap.
+              const targetR = rf.edge - lf.gap;
+              const delta = targetR - R;
+              if (Math.abs(delta) <= EQUIDISTANCE_SNAP_PIXELS &&
+                  Math.abs(delta) < bestXMag) {
+                bestXMag = Math.abs(delta);
+                bestXCorrection = delta;           // positive dx extends R
+              }
+            } else if (movesLeft && !movesRight) {
+              // L is free; R (and rf.gap) is fixed. Target L = lf.edge + rf.gap.
+              const targetL = lf.edge + rf.gap;
+              const delta = targetL - L;
+              // In our dx convention for side 'l', positive dx moves L right,
+              // so we need correction = delta (positive delta -> positive dx).
+              if (Math.abs(delta) <= EQUIDISTANCE_SNAP_PIXELS &&
+                  Math.abs(delta) < bestXMag) {
+                bestXMag = Math.abs(delta);
+                bestXCorrection = delta;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (canSnapY) {
+      const sameCol = (c) => !(c.x + c.w <= L || c.x >= R);
+      const topFlanks = [];
+      const botFlanks = [];
+      for (const c of candidates) {
+        if (!sameCol(c)) continue;
+        const cB = c.y + c.h;
+        if (cB <= T) {
+          const gap = T - cB;
+          if (gap <= EQUIDISTANCE_MAX_DISTANCE) topFlanks.push({ edge: cB, gap });
+        } else if (c.y >= B) {
+          const gap = c.y - B;
+          if (gap <= EQUIDISTANCE_MAX_DISTANCE) botFlanks.push({ edge: c.y, gap });
+        }
+      }
+      if (topFlanks.length && botFlanks.length) {
+        for (const tf of topFlanks) {
+          for (const bf of botFlanks) {
+            if (movesBottom && !movesTop) {
+              const targetB = bf.edge - tf.gap;
+              const delta = targetB - B;
+              if (Math.abs(delta) <= EQUIDISTANCE_SNAP_PIXELS &&
+                  Math.abs(delta) < bestYMag) {
+                bestYMag = Math.abs(delta);
+                bestYCorrection = delta;
+              }
+            } else if (movesTop && !movesBottom) {
+              const targetT = tf.edge + bf.gap;
+              const delta = targetT - T;
+              if (Math.abs(delta) <= EQUIDISTANCE_SNAP_PIXELS &&
+                  Math.abs(delta) < bestYMag) {
+                bestYMag = Math.abs(delta);
+                bestYCorrection = delta;
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  let finalDx = primary.dx;
+  let finalDy = primary.dy;
+  // For 'l' side, dx convention is: positive dx moves L right. Our correction
+  // already expresses "how much L should move" directly. Same sign for R.
+  if (bestXMag < Infinity) {
+    if (movesRight && !movesLeft)      finalDx = primary.dx + bestXCorrection;
+    else if (movesLeft && !movesRight) finalDx = primary.dx + bestXCorrection;
+  }
+  if (bestYMag < Infinity) {
+    if (movesBottom && !movesTop)      finalDy = primary.dy + bestYCorrection;
+    else if (movesTop && !movesBottom) finalDy = primary.dy + bestYCorrection;
+  }
+
+  // Recompute projected rects with final dx/dy, then gather indicators for
+  // any flanks that still match exactly.
+  const snapsX = [];
+  const snapsY = [];
+  stretchStartStates.forEach((start, idx) => {
+    let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
+    if (side === 'r')       { newW = start.w + finalDx; }
+    else if (side === 'l')  { newW = start.w - finalDx; newX = start.x + finalDx; }
+    else if (side === 'b')  { newH = start.h + finalDy; }
+    else if (side === 't')  { newH = start.h - finalDy; newY = start.y + finalDy; }
+    else if (side === 'br') { newW = start.w + finalDx; newH = start.h + finalDy; }
+    else if (side === 'bl') { newW = start.w - finalDx; newH = start.h + finalDy; newX = start.x + finalDx; }
+    else if (side === 'tr') { newW = start.w + finalDx; newH = start.h - finalDy; newY = start.y + finalDy; }
+    else if (side === 'tl') { newW = start.w - finalDx; newH = start.h - finalDy; newX = start.x + finalDx; newY = start.y + finalDy; }
+    if (newW < 30) { newW = 30; if (movesLeft) newX = start.x + start.w - 30; }
+    if (newH < 30) { newH = 30; if (movesTop)  newY = start.y + start.h - 30; }
+
+    const L = newX, T = newY, R = newX + newW, B = newY + newH;
+    const rect = { kind: 'frame', idx, L, T, R, B };
+
+    if (bestXMag < Infinity) {
+      const info = computeEquidistanceSnapX(L, T, R, B, candidates);
+      if (info && Math.abs(info.correction) < 0.5) snapsX.push({ rect, info });
+    }
+    if (bestYMag < Infinity) {
+      const info = computeEquidistanceSnapY(L, T, R, B, candidates);
+      if (info && Math.abs(info.correction) < 0.5) snapsY.push({ rect, info });
+    }
+  });
+
+  renderEquidistanceIndicators(snapsX, snapsY);
+  return { dx: finalDx, dy: finalDy };
 }
 
 function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
@@ -1688,16 +2091,25 @@ function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
 }
 
 function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
-  const hEdges = []; 
-  const vEdges = []; 
+  // Each record carries the coordinate of the edge AND the perpendicular
+  // range of the source object (for obstruction testing). `src: null` marks
+  // canvas edges, which are never obstructable.
+  const hEdges = [];  // { y, x1, x2, src }
+  const vEdges = [];  // { x, y1, y2, src }
 
-  hEdges.push(0, CANVAS_H);
-  vEdges.push(0, CANVAS_W);
+  // Canvas edges — always valid, no obstruction check.
+  hEdges.push({ y: 0, x1: 0, x2: CANVAS_W, src: null });
+  hEdges.push({ y: CANVAS_H, x1: 0, x2: CANVAS_W, src: null });
+  vEdges.push({ x: 0, y1: 0, y2: CANVAS_H, src: null });
+  vEdges.push({ x: CANVAS_W, y1: 0, y2: CANVAS_H, src: null });
 
   cells.forEach((s, idx) => {
     if (excludeFrameIndices.has(idx)) return;
-    hEdges.push(s.cfg.y, s.cfg.y + s.cfg.h);
-    vEdges.push(s.cfg.x, s.cfg.x + s.cfg.w);
+    const src = { x: s.cfg.x, y: s.cfg.y, w: s.cfg.w, h: s.cfg.h, frameIdx: idx };
+    hEdges.push({ y: s.cfg.y,           x1: s.cfg.x, x2: s.cfg.x + s.cfg.w, src });
+    hEdges.push({ y: s.cfg.y + s.cfg.h, x1: s.cfg.x, x2: s.cfg.x + s.cfg.w, src });
+    vEdges.push({ x: s.cfg.x,           y1: s.cfg.y, y2: s.cfg.y + s.cfg.h, src });
+    vEdges.push({ x: s.cfg.x + s.cfg.w, y1: s.cfg.y, y2: s.cfg.y + s.cfg.h, src });
   });
 
   const tbs = getTextBoxes();
@@ -1705,11 +2117,375 @@ function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
     if (excludeTextBoxIds.has(tb.id)) return;
     const w = tb.width || tb.contentEl.offsetWidth;
     const h = tb.contentEl.offsetHeight;
-    hEdges.push(tb.y, tb.y + h);
-    vEdges.push(tb.x, tb.x + w);
+    // frameIdx: -1 marks a text-box source (candidate is fine, not an obstructor).
+    const src = { x: tb.x, y: tb.y, w, h, frameIdx: -1 };
+    hEdges.push({ y: tb.y,     x1: tb.x, x2: tb.x + w, src });
+    hEdges.push({ y: tb.y + h, x1: tb.x, x2: tb.x + w, src });
+    vEdges.push({ x: tb.x,     y1: tb.y, y2: tb.y + h, src });
+    vEdges.push({ x: tb.x + w, y1: tb.y, y2: tb.y + h, src });
   });
 
   return { hEdges, vEdges };
+}
+
+// Returns true if a frame (other than the moving object and other than the
+// candidate's own source) physically sits on the straight line between the
+// moving object and the alignment candidate, blocking the visual alignment.
+//
+// For a VERTICAL alignment line at x = v:
+//   - The "line of sight" runs from the moving rect's Y range to the
+//     candidate's Y range (src.y .. src.y+src.h).
+//   - If the two Y ranges overlap (adjacent frames side-by-side), there's
+//     no gap for anything to obstruct — return false (alignment is valid).
+//   - Otherwise the gap is the Y interval strictly between them.
+//   - An obstructor is any frame whose X range strictly contains v AND
+//     whose Y range overlaps the gap interval.
+//
+// `excludeFrameIndices`: frames currently being moved (can't obstruct
+// themselves). `src.frameIdx` is also exempt (the candidate is not its own
+// obstructor). `src === null` (canvas edge) always returns false.
+function edgeAlignmentObstructed(orientation, edgeCoord, movingL, movingT, movingR, movingB, src, excludeFrameIndices) {
+  if (!src) return false; // canvas edges always valid
+
+  if (orientation === 'v') {
+    const srcT = src.y, srcB = src.y + src.h;
+    // Y ranges overlap → no gap to obstruct.
+    if (!(srcB <= movingT || srcT >= movingB)) return false;
+    const gapStart = srcB <= movingT ? srcB     : movingB;
+    const gapEnd   = srcB <= movingT ? movingT  : srcT;
+    if (gapEnd <= gapStart) return false;
+
+    for (let i = 0; i < cells.length; i++) {
+      if (excludeFrameIndices && excludeFrameIndices.has(i)) continue;
+      if (src.frameIdx === i) continue;
+      const f = cells[i].cfg;
+      const fL = f.x, fR = f.x + f.w, fT = f.y, fB = f.y + f.h;
+      // Frame strictly crosses the vertical line x = edgeCoord.
+      if (fL < edgeCoord && fR > edgeCoord) {
+        // Frame's Y range overlaps the gap (open-interval overlap).
+        if (fT < gapEnd && fB > gapStart) return true;
+      }
+    }
+    return false;
+  } else {
+    // orientation === 'h': horizontal line at y = edgeCoord.
+    const srcL = src.x, srcR = src.x + src.w;
+    if (!(srcR <= movingL || srcL >= movingR)) return false;
+    const gapStart = srcR <= movingL ? srcR     : movingR;
+    const gapEnd   = srcR <= movingL ? movingL  : srcL;
+    if (gapEnd <= gapStart) return false;
+
+    for (let i = 0; i < cells.length; i++) {
+      if (excludeFrameIndices && excludeFrameIndices.has(i)) continue;
+      if (src.frameIdx === i) continue;
+      const f = cells[i].cfg;
+      const fL = f.x, fR = f.x + f.w, fT = f.y, fB = f.y + f.h;
+      if (fT < edgeCoord && fB > edgeCoord) {
+        if (fL < gapEnd && fR > gapStart) return true;
+      }
+    }
+    return false;
+  }
+}
+
+// Center-alignment analogue: obstruction test for a center-of-object
+// alignment where the line coincides with the center coordinate (cx for
+// vertical center line, cy for horizontal). The "moving side" still uses
+// the moving object's full rect; the candidate side uses its src rect.
+function centerAlignmentObstructed(orientation, lineCoord, movingL, movingT, movingR, movingB, src, excludeFrameIndices) {
+  // Same geometry as edgeAlignmentObstructed — the line is at lineCoord and
+  // the gap is computed between the two rectangles' perpendicular ranges.
+  return edgeAlignmentObstructed(orientation, lineCoord, movingL, movingT, movingR, movingB, src, excludeFrameIndices);
+}
+
+// True when the gap between the moving rect and the candidate's source rect
+// along the axis PERPENDICULAR to the alignment line exceeds
+// CENTER_ALIGN_MAX_DISTANCE. For a vertical center line (shared cx), the
+// relevant gap is the Y distance between nearest edges; for a horizontal
+// center line (shared cy), the gap is the X distance. Overlapping ranges
+// count as zero gap (always within range). Canvas-center candidates have
+// src === null and are treated as always within range (though the canvas
+// center alignment itself was already removed; this keeps the helper safe).
+function centerAlignmentTooFar(orientation, movingL, movingT, movingR, movingB, src) {
+  if (!src) return false;
+  if (orientation === 'v') {
+    const srcT = src.y, srcB = src.y + src.h;
+    // Overlap → gap is zero → always in range.
+    if (!(srcB <= movingT || srcT >= movingB)) return false;
+    const gap = srcB <= movingT ? movingT - srcB : srcT - movingB;
+    return gap > CENTER_ALIGN_MAX_DISTANCE;
+  } else {
+    const srcL = src.x, srcR = src.x + src.w;
+    if (!(srcR <= movingL || srcL >= movingR)) return false;
+    const gap = srcR <= movingL ? movingL - srcR : srcL - movingR;
+    return gap > CENTER_ALIGN_MAX_DISTANCE;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   EQUIDISTANCE SPACING SNAP                                              ║
+// ║                                                                          ║
+// ║   When a selected object sits between two flanking frames, snap the      ║
+// ║   selected object so the two gaps are exactly equal — but only if        ║
+// ║   they're already close to equal (within EQUIDISTANCE_SNAP_PIXELS)       ║
+// ║   and both gaps are <= EQUIDISTANCE_MAX_DISTANCE.                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+let activeEquiIndicators = [];
+
+function ensureEquiIndicator(index, orientation) {
+  while (activeEquiIndicators.length <= index) {
+    const el = document.createElement('div');
+    el.className = 'equidistance-indicator';
+    el.style.display = 'none';
+    canvasArea.appendChild(el);
+    activeEquiIndicators.push(el);
+  }
+  const el = activeEquiIndicators[index];
+  el.className = 'equidistance-indicator eq-' + orientation;
+  return el;
+}
+
+function hideEquiIndicators() {
+  activeEquiIndicators.forEach(el => el.style.display = 'none');
+}
+
+function removeEquiIndicatorEls() {
+  activeEquiIndicators.forEach(el => el.remove());
+  activeEquiIndicators = [];
+}
+
+// Collect candidate flanking frames (not text boxes — spacing is measured
+// against frames). Returns an array of { x, y, w, h }. Also filters out any
+// frames being dragged/stretched (the excludeFrameIndices set).
+function getEquidistanceFrameCandidates(excludeFrameIndices) {
+  const out = [];
+  cells.forEach((s, idx) => {
+    if (excludeFrameIndices && excludeFrameIndices.has(idx)) return;
+    out.push({ x: s.cfg.x, y: s.cfg.y, w: s.cfg.w, h: s.cfg.h });
+  });
+  return out;
+}
+
+// Given a selected object's rect (L, T, R, B) and an array of candidate
+// frames, find the best horizontal-equidistance snap correction along X —
+// and the flanking edges to visualize. Returns null if no flank pair exists
+// that satisfies the snap and distance constraints.
+//
+// Horizontal equidistance: a left-flank frame has its right edge at some
+// xL <= L, a right-flank frame has its left edge at some xR >= R, AND the
+// two frames vertically overlap the selected rect's Y range (so they are
+// "in the same row").
+function computeEquidistanceSnapX(L, T, R, B, candidates) {
+  const midY = (T + B) / 2;
+
+  // Vertical overlap test: a candidate is in the same row if its Y range
+  // overlaps the selected object's Y range.
+  const sameRow = (c) => !(c.y + c.h <= T || c.y >= B);
+
+  const leftFlanks = [];   // candidates with right edge <= L, close enough
+  const rightFlanks = [];  // candidates with left edge >= R, close enough
+
+  for (const c of candidates) {
+    if (!sameRow(c)) continue;
+    const cR = c.x + c.w;
+    if (cR <= L) {
+      const gap = L - cR;
+      if (gap <= EQUIDISTANCE_MAX_DISTANCE) leftFlanks.push({ c, edge: cR, gap });
+    } else if (c.x >= R) {
+      const gap = c.x - R;
+      if (gap <= EQUIDISTANCE_MAX_DISTANCE) rightFlanks.push({ c, edge: c.x, gap });
+    }
+  }
+  if (!leftFlanks.length || !rightFlanks.length) return null;
+
+  let best = null;  // { correction, leftFlank, rightFlank, diff }
+  for (const lf of leftFlanks) {
+    for (const rf of rightFlanks) {
+      const diff = lf.gap - rf.gap;              // >0 means object sits too far right
+      const absDiff = Math.abs(diff);
+      if (absDiff > EQUIDISTANCE_SNAP_PIXELS * 2) continue; // need diff/2 <= SNAP
+      const correction = -diff / 2;               // shift object by this on X
+      if (Math.abs(correction) > EQUIDISTANCE_SNAP_PIXELS) continue;
+      if (!best || Math.abs(correction) < Math.abs(best.correction)) {
+        best = { correction, leftFlank: lf, rightFlank: rf, midY };
+      }
+    }
+  }
+  return best;
+}
+
+// Vertical equidistance: flank above has bottom edge <= T, flank below has
+// top edge >= B, both horizontally overlap the selected rect.
+function computeEquidistanceSnapY(L, T, R, B, candidates) {
+  const midX = (L + R) / 2;
+  const sameCol = (c) => !(c.x + c.w <= L || c.x >= R);
+
+  const topFlanks = [];
+  const botFlanks = [];
+
+  for (const c of candidates) {
+    if (!sameCol(c)) continue;
+    const cB = c.y + c.h;
+    if (cB <= T) {
+      const gap = T - cB;
+      if (gap <= EQUIDISTANCE_MAX_DISTANCE) topFlanks.push({ c, edge: cB, gap });
+    } else if (c.y >= B) {
+      const gap = c.y - B;
+      if (gap <= EQUIDISTANCE_MAX_DISTANCE) botFlanks.push({ c, edge: c.y, gap });
+    }
+  }
+  if (!topFlanks.length || !botFlanks.length) return null;
+
+  let best = null;
+  for (const tf of topFlanks) {
+    for (const bf of botFlanks) {
+      const diff = tf.gap - bf.gap;
+      const absDiff = Math.abs(diff);
+      if (absDiff > EQUIDISTANCE_SNAP_PIXELS * 2) continue;
+      const correction = -diff / 2;
+      if (Math.abs(correction) > EQUIDISTANCE_SNAP_PIXELS) continue;
+      if (!best || Math.abs(correction) < Math.abs(best.correction)) {
+        best = { correction, topFlank: tf, botFlank: bf, midX };
+      }
+    }
+  }
+  return best;
+}
+
+// Collects projected rects (L, T, R, B) for the selected objects being moved,
+// given a trial dx/dy applied to their start positions.
+function getDraggedObjectRects(rawDx, rawDy, startPositionsFrames, startPositionsTextBoxes) {
+  const rects = [];
+  if (startPositionsFrames) {
+    startPositionsFrames.forEach((start, idx) => {
+      const s = cells[idx];
+      if (!s) return;
+      rects.push({
+        kind: 'frame', idx,
+        L: start.x + rawDx,
+        T: start.y + rawDy,
+        R: start.x + rawDx + s.cfg.w,
+        B: start.y + rawDy + s.cfg.h,
+      });
+    });
+  }
+  if (startPositionsTextBoxes) {
+    startPositionsTextBoxes.forEach((start, tbId) => {
+      const tb = getTextBoxById(tbId);
+      if (!tb) return;
+      const w = tb.width || tb.contentEl.offsetWidth;
+      const h = tb.contentEl.offsetHeight;
+      rects.push({
+        kind: 'tb', id: tbId,
+        L: start.x + rawDx,
+        T: start.y + rawDy,
+        R: start.x + rawDx + w,
+        B: start.y + rawDy + h,
+      });
+    });
+  }
+  return rects;
+}
+
+// Drive both horizontal + vertical equidistance snap for a MOVE interaction.
+// Returns { dx, dy, snapsX, snapsY } — snapsX/snapsY are per-rect
+// descriptors used to render indicators. Indicators are drawn with the
+// FINAL snapped positions so the lines sit on the right coordinates.
+function applyEquidistanceSnapForMove(rawDx, rawDy,
+    startPositionsFrames, startPositionsTextBoxes,
+    excludeFrameIndices, excludeTextBoxIds) {
+
+  const candidates = getEquidistanceFrameCandidates(excludeFrameIndices);
+  if (!candidates.length) { return { dx: rawDx, dy: rawDy, snapsX: [], snapsY: [] }; }
+
+  const rects = getDraggedObjectRects(rawDx, rawDy,
+    startPositionsFrames, startPositionsTextBoxes);
+  if (!rects.length) { return { dx: rawDx, dy: rawDy, snapsX: [], snapsY: [] }; }
+
+  // Find the smallest-magnitude correction across all selected objects,
+  // per axis.
+  let bestXCorrection = 0, bestXMag = Infinity;
+  let bestYCorrection = 0, bestYMag = Infinity;
+  rects.forEach(r => {
+    const sx = computeEquidistanceSnapX(r.L, r.T, r.R, r.B, candidates);
+    if (sx && Math.abs(sx.correction) < bestXMag) {
+      bestXMag = Math.abs(sx.correction);
+      bestXCorrection = sx.correction;
+    }
+    const sy = computeEquidistanceSnapY(r.L, r.T, r.R, r.B, candidates);
+    if (sy && Math.abs(sy.correction) < bestYMag) {
+      bestYMag = Math.abs(sy.correction);
+      bestYCorrection = sy.correction;
+    }
+  });
+
+  const snapDx = rawDx + (bestXMag < Infinity ? bestXCorrection : 0);
+  const snapDy = rawDy + (bestYMag < Infinity ? bestYCorrection : 0);
+
+  // Now recompute snap descriptors using the SNAPPED rects, so indicators
+  // draw on the final (equidistant) positions.
+  const snappedRects = getDraggedObjectRects(snapDx, snapDy,
+    startPositionsFrames, startPositionsTextBoxes);
+  const snapsX = [], snapsY = [];
+  snappedRects.forEach(r => {
+    if (bestXMag < Infinity) {
+      const sx = computeEquidistanceSnapX(r.L, r.T, r.R, r.B, candidates);
+      if (sx && Math.abs(sx.correction) < 0.5) {
+        snapsX.push({ rect: r, info: sx });
+      }
+    }
+    if (bestYMag < Infinity) {
+      const sy = computeEquidistanceSnapY(r.L, r.T, r.R, r.B, candidates);
+      if (sy && Math.abs(sy.correction) < 0.5) {
+        snapsY.push({ rect: r, info: sy });
+      }
+    }
+  });
+
+  return { dx: snapDx, dy: snapDy, snapsX, snapsY };
+}
+
+// Render equidistance indicators for a collection of snap descriptors.
+// Horizontal snap: two horizontal dashed segments (one in each gap) at the
+// vertical midpoint of the selected rect.
+// Vertical snap: two vertical dashed segments at the horizontal midpoint.
+function renderEquidistanceIndicators(snapsX, snapsY) {
+  let idx = 0;
+  for (const s of snapsX) {
+    const { rect, info } = s;
+    const y = (rect.T + rect.B) / 2;
+    // Left gap: from leftFlank.edge → rect.L
+    const el1 = ensureEquiIndicator(idx++, 'h');
+    el1.style.left = info.leftFlank.edge + 'px';
+    el1.style.top = y + 'px';
+    el1.style.width = (rect.L - info.leftFlank.edge) + 'px';
+    el1.style.display = '';
+    // Right gap: from rect.R → rightFlank.edge
+    const el2 = ensureEquiIndicator(idx++, 'h');
+    el2.style.left = rect.R + 'px';
+    el2.style.top = y + 'px';
+    el2.style.width = (info.rightFlank.edge - rect.R) + 'px';
+    el2.style.display = '';
+  }
+  for (const s of snapsY) {
+    const { rect, info } = s;
+    const x = (rect.L + rect.R) / 2;
+    const el1 = ensureEquiIndicator(idx++, 'v');
+    el1.style.left = x + 'px';
+    el1.style.top = info.topFlank.edge + 'px';
+    el1.style.height = (rect.T - info.topFlank.edge) + 'px';
+    el1.style.display = '';
+    const el2 = ensureEquiIndicator(idx++, 'v');
+    el2.style.left = x + 'px';
+    el2.style.top = rect.B + 'px';
+    el2.style.height = (info.botFlank.edge - rect.B) + 'px';
+    el2.style.display = '';
+  }
+  // Hide any stale indicators from previous frames.
+  for (let i = idx; i < activeEquiIndicators.length; i++) {
+    activeEquiIndicators[i].style.display = 'none';
+  }
 }
 
 function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds, shiftConstrain, altConstrain) {
@@ -1790,13 +2566,18 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       const { newX, newY, newW, newH, constrained } = projectFrame(start, rawDx, rawDy);
       if (constrained) isConstrained = true;
 
+      // Projected rect of the frame being stretched — needed for obstruction
+      // test against a candidate edge's source.
+      const mL = newX, mT = newY, mR = newX + newW, mB = newY + newH;
+
       if (canSnapX) {
         const activeXEdge = side.includes('l') ? newX : side.includes('r') ? newX + newW : newX + newW;
         for (const ve of vEdges) {
-          const dist = Math.abs(activeXEdge - ve);
-          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist) {
+          const dist = Math.abs(activeXEdge - ve.x);
+          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist &&
+              !edgeAlignmentObstructed('v', ve.x, mL, mT, mR, mB, ve.src, excludeFrameIndices)) {
             bestDxDist = dist;
-            bestDxCorrection = ve - activeXEdge;
+            bestDxCorrection = ve.x - activeXEdge;
           }
         }
       }
@@ -1804,10 +2585,11 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       if (canSnapY) {
         const activeYEdge = side.includes('t') ? newY : side.includes('b') ? newY + newH : newY + newH;
         for (const he of hEdges) {
-          const dist = Math.abs(activeYEdge - he);
-          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDyDist) {
+          const dist = Math.abs(activeYEdge - he.y);
+          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDyDist &&
+              !edgeAlignmentObstructed('h', he.y, mL, mT, mR, mB, he.src, excludeFrameIndices)) {
             bestDyDist = dist;
-            bestDyCorrection = he - activeYEdge;
+            bestDyCorrection = he.y - activeYEdge;
           }
         }
       }
@@ -1822,11 +2604,17 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
         const widthDelta = side.includes('r') ? rawDx : -rawDx;
         const newW = Math.max(20, start.width + widthDelta);
         const activeXEdge = side.includes('r') ? start.x + newW : start.x - (newW - start.width);
+        // Moving rect for the text box being stretched.
+        const mL = side.includes('r') ? start.x : start.x - (newW - start.width);
+        const mR = mL + newW;
+        const mT = start.y;
+        const mB = start.y + (start.height || (tb.contentEl ? tb.contentEl.offsetHeight : 0));
         for (const ve of vEdges) {
-          const dist = Math.abs(activeXEdge - ve);
-          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist) {
+          const dist = Math.abs(activeXEdge - ve.x);
+          if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDxDist &&
+              !edgeAlignmentObstructed('v', ve.x, mL, mT, mR, mB, ve.src, excludeFrameIndices)) {
             bestDxDist = dist;
-            bestDxCorrection = ve - activeXEdge;
+            bestDxCorrection = ve.x - activeXEdge;
           }
         }
       }
@@ -1889,17 +2677,22 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
   if (stretchStartStates) {
     stretchStartStates.forEach((start, idx) => {
       const { newX, newY, newW, newH } = projectFrame(start, snapDx, snapDy);
+      const mL = newX, mT = newY, mR = newX + newW, mB = newY + newH;
 
       if (canSnapX) {
         const activeXEdge = side.includes('l') ? newX : side.includes('r') ? newX + newW : newX + newW;
         for (const ve of vEdges) {
-          if (Math.abs(activeXEdge - ve) < 0.5) guideVSet.add(Math.round(ve));
+          if (Math.abs(activeXEdge - ve.x) < 0.5 &&
+              !edgeAlignmentObstructed('v', ve.x, mL, mT, mR, mB, ve.src, excludeFrameIndices))
+            guideVSet.add(Math.round(ve.x));
         }
       }
       if (canSnapY) {
         const activeYEdge = side.includes('t') ? newY : side.includes('b') ? newY + newH : newY + newH;
         for (const he of hEdges) {
-          if (Math.abs(activeYEdge - he) < 0.5) guideHSet.add(Math.round(he));
+          if (Math.abs(activeYEdge - he.y) < 0.5 &&
+              !edgeAlignmentObstructed('h', he.y, mL, mT, mR, mB, he.src, excludeFrameIndices))
+            guideHSet.add(Math.round(he.y));
         }
       }
     });
@@ -2900,7 +3693,7 @@ window.addEventListener('mousemove', (e) => {
 
     const dragFrameSet = new Set(multiFrameDragStartPositions.keys());
     const dragTextSet = multiTextDragStartPositions ? new Set(multiTextDragStartPositions.keys()) : new Set();
-    const { dx, dy } = applyAlignmentSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
+    const { dx, dy } = applyMoveSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
     applyDragPositions(dx, dy, multiFrameDragStartPositions, multiTextDragStartPositions);
   }
 
@@ -2949,7 +3742,7 @@ window.addEventListener('mousemove', (e) => {
     if (dupCloneIndices.length > 0 || dupTextBoxCloneIds.length > 0) {
       const dragFrameSet = new Set(dupCloneIndices);
       const dragTextSet = new Set(dupTextBoxCloneIds);
-      const { dx: snapDx, dy: snapDy } = applyAlignmentSnap(dx, dy, dragFrameSet, dragTextSet, dupCloneToStartPos, dupTextBoxCloneStartPos);
+      const { dx: snapDx, dy: snapDy } = applyMoveSnap(dx, dy, dragFrameSet, dragTextSet, dupCloneToStartPos, dupTextBoxCloneStartPos);
       applyDragPositions(snapDx, snapDy, dupCloneToStartPos.size > 0 ? dupCloneToStartPos : null, dupTextBoxCloneStartPos.size > 0 ? dupTextBoxCloneStartPos : null);
     }
   }
@@ -2964,7 +3757,7 @@ window.addEventListener('mousemove', (e) => {
     const altConstrain = e.altKey && !e.shiftKey; 
     const excludeFrames = new Set(frameStretchStartStates.keys());
     const excludeText = frameStretchStartTextStates ? new Set(frameStretchStartTextStates.keys()) : new Set();
-    const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText, shiftConstrain, altConstrain);
+    const { dx, dy } = applyStretchMoveSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText, shiftConstrain, altConstrain);
 
     frameStretchStartStates.forEach((start, idx) => {
       const s = cells[idx];
@@ -4397,23 +5190,25 @@ function snapCoordsToEdges(x, y, showGuides) {
   let snappedX = x, snappedY = y;
   let snappedToV = null, snappedToH = null;
 
+  // Point-snap has no moving rect, so we can't do line-of-sight obstruction
+  // checks here — snap to the nearest edge coordinate.
   let bestDx = Infinity;
   for (const ve of vEdges) {
-    const dist = Math.abs(x - ve);
+    const dist = Math.abs(x - ve.x);
     if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDx) {
       bestDx = dist;
-      snappedX = ve;
-      snappedToV = ve;
+      snappedX = ve.x;
+      snappedToV = ve.x;
     }
   }
 
   let bestDy = Infinity;
   for (const he of hEdges) {
-    const dist = Math.abs(y - he);
+    const dist = Math.abs(y - he.y);
     if (dist < ALIGNMENT_STRETCH_CLICK_PIXELS && dist < bestDy) {
       bestDy = dist;
-      snappedY = he;
-      snappedToH = he;
+      snappedY = he.y;
+      snappedToH = he.y;
     }
   }
 
@@ -4507,17 +5302,20 @@ function showDrawRectGuides(left, top, width, height) {
     top: top,
     bottom: top + height,
   };
+  const mL = left, mT = top, mR = left + width, mB = top + height;
 
   const guideVSet = new Set();
   const guideHSet = new Set();
 
   for (const ve of vEdges) {
-    if (Math.abs(rectEdges.left - ve) < 0.5) guideVSet.add(Math.round(ve));
-    if (Math.abs(rectEdges.right - ve) < 0.5) guideVSet.add(Math.round(ve));
+    const matches = Math.abs(rectEdges.left - ve.x) < 0.5 || Math.abs(rectEdges.right - ve.x) < 0.5;
+    if (matches && !edgeAlignmentObstructed('v', ve.x, mL, mT, mR, mB, ve.src, new Set()))
+      guideVSet.add(Math.round(ve.x));
   }
   for (const he of hEdges) {
-    if (Math.abs(rectEdges.top - he) < 0.5) guideHSet.add(Math.round(he));
-    if (Math.abs(rectEdges.bottom - he) < 0.5) guideHSet.add(Math.round(he));
+    const matches = Math.abs(rectEdges.top - he.y) < 0.5 || Math.abs(rectEdges.bottom - he.y) < 0.5;
+    if (matches && !edgeAlignmentObstructed('h', he.y, mL, mT, mR, mB, he.src, new Set()))
+      guideHSet.add(Math.round(he.y));
   }
 
   const guideVArr = [...guideVSet];
@@ -4748,7 +5546,7 @@ window.addEventListener('keydown', (e) => {
   const dragTextSet = new Set(arrowKeyTextStarts.keys());
   
   // Snap applied here for standard arrow keys
-  const { dx, dy } = applyAlignmentSnap(
+  const { dx, dy } = applyMoveSnap(
     arrowKeyAccumDx, arrowKeyAccumDy, dragFrameSet, dragTextSet,
     arrowKeyFrameStarts.size > 0 ? arrowKeyFrameStarts : null,
     arrowKeyTextStarts.size > 0 ? arrowKeyTextStarts : null
@@ -4790,16 +5588,24 @@ function showAlignmentGuidesForCurrentPositions() {
     const bottom = s.cfg.y + s.cfg.h;
     
     for (const t of targets) {
-      if (Math.abs(cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
-      if (Math.abs(cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
+      if (Math.abs(cx - t.cx) < 0.5 &&
+          !centerAlignmentTooFar('v', left, top, right, bottom, t.src) &&
+          !edgeAlignmentObstructed('v', t.cx, left, top, right, bottom, t.src, dragFrameSet))
+        guideVSet.add(Math.round(t.cx));
+      if (Math.abs(cy - t.cy) < 0.5 &&
+          !centerAlignmentTooFar('h', left, top, right, bottom, t.src) &&
+          !edgeAlignmentObstructed('h', t.cy, left, top, right, bottom, t.src, dragFrameSet))
+        guideHSet.add(Math.round(t.cy));
     }
     for (const ve of vEdges) {
-      if (Math.abs(left - ve) < 0.5) guideVSet.add(Math.round(ve));
-      if (Math.abs(right - ve) < 0.5) guideVSet.add(Math.round(ve));
+      const matches = Math.abs(left - ve.x) < 0.5 || Math.abs(right - ve.x) < 0.5;
+      if (matches && !edgeAlignmentObstructed('v', ve.x, left, top, right, bottom, ve.src, dragFrameSet))
+        guideVSet.add(Math.round(ve.x));
     }
     for (const he of hEdges) {
-      if (Math.abs(top - he) < 0.5) guideHSet.add(Math.round(he));
-      if (Math.abs(bottom - he) < 0.5) guideHSet.add(Math.round(he));
+      const matches = Math.abs(top - he.y) < 0.5 || Math.abs(bottom - he.y) < 0.5;
+      if (matches && !edgeAlignmentObstructed('h', he.y, left, top, right, bottom, he.src, dragFrameSet))
+        guideHSet.add(Math.round(he.y));
     }
   });
 
@@ -4817,16 +5623,24 @@ function showAlignmentGuidesForCurrentPositions() {
     const bottom = tb.y + h;
     
     for (const t of targets) {
-      if (Math.abs(cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
-      if (Math.abs(cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
+      if (Math.abs(cx - t.cx) < 0.5 &&
+          !centerAlignmentTooFar('v', left, top, right, bottom, t.src) &&
+          !edgeAlignmentObstructed('v', t.cx, left, top, right, bottom, t.src, dragFrameSet))
+        guideVSet.add(Math.round(t.cx));
+      if (Math.abs(cy - t.cy) < 0.5 &&
+          !centerAlignmentTooFar('h', left, top, right, bottom, t.src) &&
+          !edgeAlignmentObstructed('h', t.cy, left, top, right, bottom, t.src, dragFrameSet))
+        guideHSet.add(Math.round(t.cy));
     }
     for (const ve of vEdges) {
-      if (Math.abs(left - ve) < 0.5) guideVSet.add(Math.round(ve));
-      if (Math.abs(right - ve) < 0.5) guideVSet.add(Math.round(ve));
+      const matches = Math.abs(left - ve.x) < 0.5 || Math.abs(right - ve.x) < 0.5;
+      if (matches && !edgeAlignmentObstructed('v', ve.x, left, top, right, bottom, ve.src, dragFrameSet))
+        guideVSet.add(Math.round(ve.x));
     }
     for (const he of hEdges) {
-      if (Math.abs(top - he) < 0.5) guideHSet.add(Math.round(he));
-      if (Math.abs(bottom - he) < 0.5) guideHSet.add(Math.round(he));
+      const matches = Math.abs(top - he.y) < 0.5 || Math.abs(bottom - he.y) < 0.5;
+      if (matches && !edgeAlignmentObstructed('h', he.y, left, top, right, bottom, he.src, dragFrameSet))
+        guideHSet.add(Math.round(he.y));
     }
   });
 
@@ -5119,7 +5933,7 @@ window.addEventListener('mousemove', (e) => {
 
     const dragFrameSet = multiFrameDragStartPositions ? new Set(multiFrameDragStartPositions.keys()) : new Set();
     const dragTextSet = new Set(multiTextDragStartPositions.keys());
-    const { dx, dy } = applyAlignmentSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
+    const { dx, dy } = applyMoveSnap(rawDx, rawDy, dragFrameSet, dragTextSet, multiFrameDragStartPositions, multiTextDragStartPositions);
     applyDragPositions(dx, dy, multiFrameDragStartPositions, multiTextDragStartPositions);
   }
 
