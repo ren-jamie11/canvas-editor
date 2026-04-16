@@ -567,8 +567,10 @@
     align-items: center;
     justify-content: center;
     transition: background 0.12s, border-color 0.12s, color 0.12s;
+    outline: none;
   }
   .rs-shape-btn:hover { background: #222228; border-color: #444; color: #ddd; }
+  .rs-shape-btn:focus-visible { border-color: #5a5aff; }
   .rs-shape-btn.active { background: #252540; border-color: #5a5aff; color: #c0c0ff; }
 
   /* Shape draw mode cursor */
@@ -1229,6 +1231,9 @@ const ALIGNMENT_EDGE_CLICK_PIXELS = 8;
 // before it snaps to square proportions during stretching.
 const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 8;
 
+// Controls how many pixels objects move per arrow key press
+const ARROW_KEY_MOVE_PIXELS = 3;
+
 let activeGuideHs = []; // horizontal guide line DOM elements
 let activeGuideVs = []; // vertical guide line DOM elements
 
@@ -1526,18 +1531,18 @@ function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
 // Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
 // each stretched object's active edges against all target edges.
 // Returns { dx, dy } with snap corrections applied.
-function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds, shiftConstrain) {
+function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds, shiftConstrain, altConstrain) {
   const { hEdges, vEdges } = getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds);
 
   // Determine which axes can snap based on the handle side
-  // When shift is held, both dimensions change so both axes can snap
-  const canSnapX = shiftConstrain || side.includes('l') || side.includes('r');
-  const canSnapY = shiftConstrain || side.includes('t') || side.includes('b');
+  // When shift or alt is held, both dimensions change so both axes can snap
+  const canSnapX = shiftConstrain || altConstrain || side.includes('l') || side.includes('r');
+  const canSnapY = shiftConstrain || altConstrain || side.includes('t') || side.includes('b');
 
   let bestDxCorrection = null, bestDxDist = Infinity;
   let bestDyCorrection = null, bestDyDist = Infinity;
 
-  // Helper: compute projected geometry for a frame given dx/dy, including shift-constrain and soft-snap
+  // Helper: compute projected geometry for a frame given dx/dy, including shift/alt-constrain and soft-snap
   function projectFrame(start, projDx, projDy) {
     let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
     if (side === 'r') { newW = start.w + projDx; }
@@ -1552,7 +1557,7 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
     if (newW < 30) { newW = 30; if (side.includes('l')) newX = start.x + start.w - 30; }
     if (newH < 30) { newH = 30; if (side.includes('t')) newY = start.y + start.h - 30; }
 
-    const softSnap = !shiftConstrain && (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30);
+    const softSnap = !shiftConstrain && !altConstrain && (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30);
     let constrained = false;
 
     if (shiftConstrain) {
@@ -1563,6 +1568,26 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
         const target = Math.max(newW, newH);
         if (newW < target) { const diff = target - newW; newW = target; if (side.includes('l')) newX -= diff; }
         if (newH < target) { const diff = target - newH; newH = target; if (side.includes('t')) newY -= diff; }
+      }
+    } else if (altConstrain) {
+      constrained = true;
+      const aspect = start.w / start.h; // preserve original aspect ratio
+      if (side === 'l' || side === 'r') {
+        // Width drives; height follows aspect ratio (anchored at top like shift)
+        newH = newW / aspect;
+      } else if (side === 't' || side === 'b') {
+        // Height drives; width follows aspect ratio (anchored at left like shift)
+        newW = newH * aspect;
+      } else {
+        // Corner: scale uniformly by the dimension that grew more
+        const ratioW = newW / start.w;
+        const ratioH = newH / start.h;
+        const ratio = Math.max(ratioW, ratioH);
+        const prevW = newW, prevH = newH;
+        newW = start.w * ratio;
+        newH = start.h * ratio;
+        if (side.includes('l')) newX -= (newW - prevW);
+        if (side.includes('t')) newY -= (newH - prevH);
       }
     } else if (softSnap) {
       constrained = true;
@@ -1641,33 +1666,47 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
   let snapDx = rawDx, snapDy = rawDy;
 
   // Handle corner/constrained snapping conflict
-  if (isConstrained || shiftConstrain) {
+  if (isConstrained || shiftConstrain || altConstrain) {
+    // Compute the reference aspect ratio (for alt: original aspect; for shift/soft-snap: 1)
+    let refAspect = 1;
+    if (altConstrain && stretchStartStates && stretchStartStates.size > 0) {
+      const firstStart = stretchStartStates.values().next().value;
+      refAspect = firstStart.w / firstStart.h;
+    }
+
     if (side === 'l' || side === 'r' || side === 't' || side === 'b') {
       if ((side === 'l' || side === 'r') && bestDyCorrection !== null) {
-        if (bestDxCorrection === null || Math.abs(bestDyCorrection) < Math.abs(bestDxCorrection)) {
-          bestDxCorrection = bestDyCorrection;
+        // Convert dy correction to dx correction: for alt, dx = dy * aspect
+        const convertedDx = altConstrain ? bestDyCorrection * refAspect : bestDyCorrection;
+        if (bestDxCorrection === null || Math.abs(convertedDx) < Math.abs(bestDxCorrection)) {
+          bestDxCorrection = convertedDx;
         }
         bestDyCorrection = null;
       }
       if ((side === 't' || side === 'b') && bestDxCorrection !== null) {
-        if (bestDyCorrection === null || Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
-          bestDyCorrection = bestDxCorrection;
+        // Convert dx correction to dy correction: for alt, dy = dx / aspect
+        const convertedDy = altConstrain ? bestDxCorrection / refAspect : bestDxCorrection;
+        if (bestDyCorrection === null || Math.abs(convertedDy) < Math.abs(bestDyCorrection)) {
+          bestDyCorrection = convertedDy;
         }
         bestDxCorrection = null;
       }
     } else {
-      // Corner handles under constraints (Both axes force newW == newH)
-      // Correction on X must ALSO apply to Y to preserve the square proportions.
+      // Corner handles under constraints
       if (bestDxCorrection !== null && bestDyCorrection !== null) {
         if (Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
-          bestDyCorrection = side.includes('t') === side.includes('l') ? bestDxCorrection : -bestDxCorrection;
+          const sign = side.includes('t') === side.includes('l') ? 1 : -1;
+          bestDyCorrection = altConstrain ? sign * bestDxCorrection / refAspect : sign * bestDxCorrection;
         } else {
-          bestDxCorrection = side.includes('t') === side.includes('l') ? bestDyCorrection : -bestDyCorrection;
+          const sign = side.includes('t') === side.includes('l') ? 1 : -1;
+          bestDxCorrection = altConstrain ? sign * bestDyCorrection * refAspect : sign * bestDyCorrection;
         }
       } else if (bestDxCorrection !== null) {
-        bestDyCorrection = side.includes('t') === side.includes('l') ? bestDxCorrection : -bestDxCorrection;
+        const sign = side.includes('t') === side.includes('l') ? 1 : -1;
+        bestDyCorrection = altConstrain ? sign * bestDxCorrection / refAspect : sign * bestDxCorrection;
       } else if (bestDyCorrection !== null) {
-        bestDxCorrection = side.includes('t') === side.includes('l') ? bestDyCorrection : -bestDyCorrection;
+        const sign = side.includes('t') === side.includes('l') ? 1 : -1;
+        bestDxCorrection = altConstrain ? sign * bestDyCorrection * refAspect : sign * bestDyCorrection;
       }
     }
   }
@@ -2862,9 +2901,10 @@ window.addEventListener('mousemove', (e) => {
 
     // Compute snapped dx/dy with edge alignment
     const shiftConstrain = e.shiftKey;
+    const altConstrain = e.altKey && !e.shiftKey; // shift takes precedence
     const excludeFrames = new Set(frameStretchStartStates.keys());
     const excludeText = frameStretchStartTextStates ? new Set(frameStretchStartTextStates.keys()) : new Set();
-    const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText, shiftConstrain);
+    const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText, shiftConstrain, altConstrain);
 
     // Apply stretch to all selected frames
     frameStretchStartStates.forEach((start, idx) => {
@@ -2889,8 +2929,9 @@ window.addEventListener('mousemove', (e) => {
       if (newH < 30) { newH = 30; if (side.includes('t')) newY = start.y + start.h - 30; }
 
       // Shift held: force square proportions (w = h)
+      // Alt held: preserve original aspect ratio
       // OR soft snap: if w ≈ h within threshold, snap to square
-      const softSnap = !shiftConstrain &&
+      const softSnap = !shiftConstrain && !altConstrain &&
         (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30);
 
       if (shiftConstrain) {
@@ -2914,6 +2955,26 @@ window.addEventListener('mousemove', (e) => {
             newH = target;
             if (side.includes('t')) newY -= diff;
           }
+        }
+      } else if (altConstrain) {
+        // Alt held: preserve original aspect ratio
+        const aspect = start.w / start.h;
+        if (side === 'l' || side === 'r') {
+          // Width drives; height follows aspect ratio
+          newH = newW / aspect;
+        } else if (side === 't' || side === 'b') {
+          // Height drives; width follows aspect ratio
+          newW = newH * aspect;
+        } else {
+          // Corner: scale uniformly by the dimension that grew more
+          const ratioW = newW / start.w;
+          const ratioH = newH / start.h;
+          const ratio = Math.max(ratioW, ratioH);
+          const prevW = newW, prevH = newH;
+          newW = start.w * ratio;
+          newH = start.h * ratio;
+          if (side.includes('l')) newX -= (newW - prevW);
+          if (side.includes('t')) newY -= (newH - prevH);
         }
       } else if (softSnap) {
         // Soft snap: the actively-stretched dimension snaps back to match the other
@@ -4136,7 +4197,10 @@ function exitShapeDrawMode() {
   shapeDrawMode = false;
   shapeDrawType = null;
   canvasArea.classList.remove('shape-draw-mode');
-  document.querySelectorAll('.rs-shape-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.rs-shape-btn').forEach(b => {
+    b.classList.remove('active');
+    b.blur();
+  });
   hideGuides();
 }
 
@@ -4435,6 +4499,90 @@ window.addEventListener('keydown', (e) => {
     // Always deselect everything on Escape
     deselectAll();
   }
+});
+
+// ===================== ARROW KEY MOVEMENT =====================
+let arrowKeyGuideTimer = null;
+let arrowKeyFrameStarts = null;      // Map of idx -> {x, y} — positions at start of arrow session
+let arrowKeyTextStarts = null;       // Map of tbId -> {x, y}
+let arrowKeyAccumDx = 0;             // Accumulated raw delta since session started
+let arrowKeyAccumDy = 0;
+let arrowKeySessionTimer = null;     // Resets the session after user stops pressing
+
+function resetArrowKeySession() {
+  arrowKeyFrameStarts = null;
+  arrowKeyTextStarts = null;
+  arrowKeyAccumDx = 0;
+  arrowKeyAccumDy = 0;
+  arrowKeySessionTimer = null;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+  // Don't intercept if user is typing in an input or contentEditable
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.target.contentEditable === 'true') return;
+
+  // Only act if something is selected
+  if (selectedIndices.size === 0 && selectedTextBoxIds.size === 0) return;
+
+  e.preventDefault();
+
+  // Start a new session if one isn't active, or if selection changed
+  const selectionChanged = arrowKeyFrameStarts && (
+    arrowKeyFrameStarts.size !== selectedIndices.size ||
+    ![...selectedIndices].every(i => arrowKeyFrameStarts.has(i)) ||
+    (arrowKeyTextStarts && (
+      arrowKeyTextStarts.size !== selectedTextBoxIds.size ||
+      ![...selectedTextBoxIds].every(id => arrowKeyTextStarts.has(id))
+    ))
+  );
+
+  if (!arrowKeyFrameStarts || selectionChanged) {
+    arrowKeyFrameStarts = new Map();
+    selectedIndices.forEach(idx => {
+      const s = cells[idx];
+      if (s) arrowKeyFrameStarts.set(idx, { x: s.cfg.x, y: s.cfg.y });
+    });
+    arrowKeyTextStarts = new Map();
+    selectedTextBoxIds.forEach(tbId => {
+      const tb = getTextBoxById(tbId);
+      if (tb) arrowKeyTextStarts.set(tbId, { x: tb.x, y: tb.y });
+    });
+    arrowKeyAccumDx = 0;
+    arrowKeyAccumDy = 0;
+  }
+
+  // Accumulate the raw delta
+  if (e.key === 'ArrowLeft') arrowKeyAccumDx -= ARROW_KEY_MOVE_PIXELS;
+  else if (e.key === 'ArrowRight') arrowKeyAccumDx += ARROW_KEY_MOVE_PIXELS;
+  else if (e.key === 'ArrowUp') arrowKeyAccumDy -= ARROW_KEY_MOVE_PIXELS;
+  else if (e.key === 'ArrowDown') arrowKeyAccumDy += ARROW_KEY_MOVE_PIXELS;
+
+  // Run accumulated raw delta through alignment snap
+  const dragFrameSet = new Set(arrowKeyFrameStarts.keys());
+  const dragTextSet = new Set(arrowKeyTextStarts.keys());
+  const { dx, dy } = applyAlignmentSnap(
+    arrowKeyAccumDx, arrowKeyAccumDy, dragFrameSet, dragTextSet,
+    arrowKeyFrameStarts.size > 0 ? arrowKeyFrameStarts : null,
+    arrowKeyTextStarts.size > 0 ? arrowKeyTextStarts : null
+  );
+
+  // Apply positions relative to the session start
+  applyDragPositions(
+    dx, dy,
+    arrowKeyFrameStarts.size > 0 ? arrowKeyFrameStarts : null,
+    arrowKeyTextStarts.size > 0 ? arrowKeyTextStarts : null
+  );
+
+  // Auto-hide guides after a brief delay
+  clearTimeout(arrowKeyGuideTimer);
+  arrowKeyGuideTimer = setTimeout(() => hideGuides(), 500);
+
+  // Reset session after a longer idle period so next press starts fresh
+  clearTimeout(arrowKeySessionTimer);
+  arrowKeySessionTimer = setTimeout(resetArrowKeySession, 800);
 });
 
 // ===================== TEXT FORMAT SYNC =====================
