@@ -160,6 +160,13 @@
 
   .cell.has-image { background: #141417; }
 
+  /* Empty-frame placeholder tint — subtle wash of the accent color so frames
+     read clearly on any canvas background (especially pure white). Hidden as
+     soon as an image is loaded or the user applies their own border. */
+  .cell:not(.has-image):not(.has-user-border) {
+    background: rgba(90, 90, 255, 0.05);
+  }
+
   /* OVERLAYS: Used to draw inner borders smoothly around frames based on states */
   
   /* 1. Base overlay for ALL rectangular cells */
@@ -173,8 +180,15 @@
     transition: border-color 0.15s, border-width 0.15s;
   }
 
-  /* 2. Empty rectangular cell gets default frame border */
-  .cell:not(.shaped):not(.has-image)::after {
+  /* 2. Empty rectangular cell (no image, no user-applied border) gets a
+        conspicuous dashed accent border so it's visible against white. */
+  .cell:not(.shaped):not(.has-image):not(.has-user-border)::after {
+    border: var(--placeholder-border-width) dashed var(--placeholder-border-color);
+  }
+
+  /* 2b. Fallback for any image-less cell that *does* have a user border —
+         keep the old subtle outline as a faint inset guide underneath. */
+  .cell:not(.shaped):not(.has-image).has-user-border::after {
     border: var(--frame-border-width) solid var(--frame-border-color);
   }
 
@@ -209,18 +223,31 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
     cursor: grab;
     pointer-events: none;
     z-index: 2;
     transition: background 0.15s;
   }
 
-  .cell-upload:hover { background: rgba(90, 90, 255, 0.06); }
-  .cell-upload svg { opacity: 0.18; transition: opacity 0.15s; }
-  .cell-upload:hover svg { opacity: 0.35; }
-  .cell-upload span { font-size: 11px; color: #383838; transition: color 0.15s; }
-  .cell-upload:hover span { color: #555; }
+  .cell-upload:hover { background: rgba(90, 90, 255, 0.08); }
+  .cell-upload svg {
+    color: var(--placeholder-border-color);
+    opacity: 0.55;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .cell-upload:hover svg { opacity: 0.9; transform: scale(1.05); }
+  .cell-upload span {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--placeholder-border-color);
+    opacity: 0.75;
+    transition: opacity 0.15s;
+  }
+  .cell-upload:hover span { opacity: 1; }
+  /* Upload glyph is an "empty slot" affordance — show it whenever the frame
+     has no image, regardless of whether the user has applied a border. */
   .cell.has-image .cell-upload { display: none; }
 
   .cell input[type="file"] { display: none; }
@@ -313,6 +340,14 @@
     stroke: var(--frame-border-color);
     stroke-width: calc(var(--frame-border-width-num) * 2);
     transition: stroke 0.15s, stroke-width 0.15s;
+  }
+
+  /* Empty shaped cell (no image, no user-applied border) — match the
+     rectangular placeholder treatment: conspicuous dashed accent stroke. */
+  .cell.shaped:not(.has-image):not(.has-user-border) .shape-outline svg .outline-path {
+    stroke: var(--placeholder-border-color);
+    stroke-width: var(--placeholder-border-width-num);
+    stroke-dasharray: 8 5;
   }
 
   /* Shape selection states logic */
@@ -614,6 +649,33 @@
     stroke-dasharray: 5 3;
   }
 
+  /* Dynamic dimension label shown while drawing a shape */
+  .shape-draw-dim-label {
+    position: absolute;
+    pointer-events: none;
+    z-index: 210;
+    background: rgba(24, 24, 28, 0.92);
+    color: #e0ddd8;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 7px;
+    border-radius: 3px;
+    border: 1px solid rgba(90, 90, 255, 0.6);
+    white-space: nowrap;
+    transform: translate(8px, 12px);
+  }
+
+  /* Inline row layout for the dimension-label toggle */
+  .rs-dim-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: #888;
+  }
+
   /* Color picker area */
   .rs-color-swatches {
     display: flex;
@@ -843,6 +905,7 @@
     <span class="zoom-display" id="zoomDisplay"></span>
     <button id="resetBtn">Reset Selected</button>
     <button id="resetAllBtn">Reset All</button>
+    <button id="saveTemplateBtn" style="color: #20c997; border-color: #20c997;">Save Template Code</button>
   </div>
 
   <div class="canvas-area" id="canvasArea"></div>
@@ -885,6 +948,13 @@
       <button class="rs-shape-btn" id="shapeHexagon" data-shape="hexagon" title="Hexagon">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12,2 22,7.5 22,16.5 12,22 2,16.5 2,7.5"/></svg>
       </button>
+    </div>
+    <div class="rs-dim-toggle-row">
+      <label class="rs-border-toggle" title="Show dimension label while drawing">
+        <input type="checkbox" id="rsDimLabelToggle" checked>
+        <span class="rs-border-toggle-slider"></span>
+      </label>
+      <span>Show dimensions</span>
     </div>
   </div>
 
@@ -1178,65 +1248,73 @@ const SHAPES = {
   roundedSquare: { viewBox: '0 0 100 100', path: 'M16 0 L84 0 Q100 0 100 16 L100 84 Q100 100 84 100 L16 100 Q0 100 0 84 L0 16 Q0 0 16 0 Z' },
   circle: { viewBox: '0 0 100 100', path: 'M50 0 C77.6 0 100 22.4 100 50 C100 77.6 77.6 100 50 100 C22.4 100 0 77.6 0 50 C0 22.4 22.4 0 50 0 Z' },
   hexagon: { viewBox: '0 0 100 87', path: 'M25 0 L75 0 L100 43.5 L75 87 L25 87 L0 43.5 Z' },
-  amoeba: { viewBox: '0 0 120 80', path: 'M60 6 C78 4 95 12 104 24 C112 36 108 48 98 56 C90 62 78 64 68 68 C58 72 48 74 38 70 C28 66 18 60 12 50 C6 40 4 28 12 18 C20 8 38 8 60 6 Z' },
-  heart: { viewBox: '0 0 100 100', path: 'M50 88 C38 78 8 58 8 36 C8 20 20 8 36 8 C44 8 50 14 50 14 C50 14 56 8 64 8 C80 8 92 20 92 36 C92 58 62 78 50 88 Z' },
-  splat: { viewBox: '0 0 100 100', path: 'M50 8 C58 8 65 18 70 22 C78 16 88 14 90 22 C93 32 84 38 80 44 C86 50 92 58 88 66 C84 74 74 72 68 70 C66 78 60 88 50 90 C40 88 34 78 32 70 C26 72 16 74 12 66 C8 58 14 50 20 44 C16 38 7 32 10 22 C12 14 22 16 30 22 C35 18 42 8 50 8 Z' },
-  peanut: { viewBox: '0 0 130 70', path: 'M30 10 C44 4 56 10 62 18 C66 12 74 6 88 8 C104 10 118 24 116 38 C114 52 100 64 86 62 C76 60 68 54 64 48 C60 54 52 62 40 64 C26 66 10 56 8 40 C6 26 16 14 30 10 Z' },
-  cross: { viewBox: '0 0 100 100', path: 'M50 6 C58 6 62 18 62 28 C70 22 82 14 90 20 C96 26 90 40 82 46 C88 50 96 56 94 66 C90 76 78 78 68 72 C64 80 58 92 50 94 C42 92 36 80 32 72 C22 78 10 76 6 66 C4 56 12 50 18 46 C10 40 4 26 10 20 C18 14 30 22 38 28 C38 18 42 6 50 6 Z' },
-  bean: { viewBox: '0 0 130 80', path: 'M40 10 C56 4 72 6 86 12 C100 18 116 30 118 44 C120 58 108 70 92 72 C76 74 64 68 54 60 C46 66 34 74 22 72 C10 70 2 58 4 44 C6 30 20 16 40 10 Z' }
 };
 
 const TEMPLATES = [
-  {
-    name: 'Organic Collage',
-    description: '600×1200 · 4 frames',
-    canvasW: 600,
-    canvasH: 1200,
-    bgColor: '#0c0c0f',
-    bgImage: 'background.jpg',
+     {
+    name: 'Custom Template',
+    description: '1464×3000 · 10 frames',
+    canvasW: 1464,
+    canvasH: 3000,
+    bgColor: '#ffffff',
+    bgImage: null,
     frames: [
-      { x: 30, y: 50, w: 540, h: 360, shape: 'amoeba', label: 'Amoeba' },
-      { x: 100, y: 550, w: 400, h: 400, shape: 'heart', label: 'Heart' },
-      { x: 10, y: 550, w: 200, h: 200, shape: 'peanut', label: 'Peanut' },
-      { x: 10, y: 700, w: 200, h: 120, shape: 'cross', label: 'Cross' },
+      { x: 0, y: 0, w: 1464, h: 587, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 2410, w: 1464, h: 590, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1187, w: 1464, h: 650, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 722, w: 337, h: 337, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1847, w: 471, h: 549, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 993, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 497, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 375, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 752, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 1127, y: 722, w: 337, h: 337, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+    ],
+    textBoxes: [
+      { x: 531, y: 637, width: 403, text: "Product Detail", fontName: 'DM Sans', fontSize: 36, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 40, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 415, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
     ],
   },
-  {
-    name: 'Grid Mosaic',
-    description: '800×800 · 5 frames',
-    canvasW: 800,
-    canvasH: 800,
-    bgColor: '#0f0f14',
-    bgImage: 'background1.jpg',
+    {
+    name: 'Custom Template 1',
+    description: '1464×3000 · 10 frames',
+    canvasW: 1464,
+    canvasH: 3000,
+    bgColor: '#ffffff',
+    bgImage: null,
     frames: [
-      { x: 20, y: 20, w: 370, h: 370, shape: 'splat', label: 'Splat' },
-      { x: 410, y: 20, w: 370, h: 170, shape: 'bean', label: 'Bean' },
-      { x: 410, y: 210, w: 370, h: 180, shape: null, label: 'Rectangle' },
-      { x: 20, y: 410, w: 500, h: 370, shape: 'amoeba', label: 'Amoeba' },
-      { x: 540, y: 410, w: 240, h: 370, shape: 'heart', label: 'Heart' },
+      { x: 0, y: 0, w: 1464, h: 627, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 2402, w: 1464, h: 598, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1143, w: 1464, h: 678, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 722, w: 337, h: 337, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1835, w: 471, h: 549, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 993, y: 1835, w: 471, h: 549, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 497, y: 1835, w: 471, h: 549, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 375, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: true, borderColor: '#5a5aff', borderWidth: 1 },
+      { x: 752, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 1127, y: 722, w: 337, h: 337, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
     ],
-  },
-  {
-    name: 'Tall Story',
-    description: '500×1400 · 6 frames',
-    canvasW: 1400,
-    canvasH: 800,
-    bgColor: '#0a0a10',
-    bgImage: 'background2.jpg',
-    frames: [
-      { x: 20, y: 20, w: 460, h: 280, shape: 'bean', label: 'Bean' },
-      { x: 20, y: 320, w: 220, h: 220, shape: 'heart', label: 'Heart' },
-      { x: 260, y: 320, w: 220, h: 220, shape: 'cross', label: 'Cross' },
-      { x: 500, y: 20, w: 460, h: 280, shape: 'bean', label: 'Bean' },
-      { x: 800, y: 320, w: 220, h: 220, shape: 'heart', label: 'Heart' },
+    textBoxes: [
+      { x: 531, y: 649, width: 403, text: "Product Detail", fontName: 'DM Sans', fontSize: 36, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 40, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 415, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' }
     ],
   },
 ];
 
 const FRAME_BORDER_WIDTH = 1.5;
 const FRAME_BORDER_COLOR = 'rgba(255, 255, 255, 0.36)';
-const SELECTION_BORDER_COLOR = '#ffffff';
+const SELECTION_BORDER_COLOR = '#5A5AFF';
 const SELECTION_BORDER_WIDTH = 3;
+// Placeholder border shown on empty frames (no image, no user border) to
+// keep them visible against white/light canvas backgrounds.
+const PLACEHOLDER_BORDER_COLOR = '#5A5AFF';
+const PLACEHOLDER_BORDER_WIDTH = 1.5;
 
 document.documentElement.style.setProperty('--frame-border-width', FRAME_BORDER_WIDTH + 'px');
 document.documentElement.style.setProperty('--frame-border-width-num', FRAME_BORDER_WIDTH);
@@ -1244,6 +1322,9 @@ document.documentElement.style.setProperty('--frame-border-color', FRAME_BORDER_
 document.documentElement.style.setProperty('--selection-border-color', SELECTION_BORDER_COLOR);
 document.documentElement.style.setProperty('--selection-border-width', SELECTION_BORDER_WIDTH + 'px');
 document.documentElement.style.setProperty('--selection-border-width-num', SELECTION_BORDER_WIDTH);
+document.documentElement.style.setProperty('--placeholder-border-color', PLACEHOLDER_BORDER_COLOR);
+document.documentElement.style.setProperty('--placeholder-border-width', PLACEHOLDER_BORDER_WIDTH + 'px');
+document.documentElement.style.setProperty('--placeholder-border-width-num', PLACEHOLDER_BORDER_WIDTH);
 
 const DEFAULT_FRAME_BORDER_WIDTH = 1;
 
@@ -2048,7 +2129,11 @@ function createCell(state, tmpl, cfg, i) {
     posY: 0,
     loaded: false,
     lastClickTime: 0,
-    borderEnabled: cfg.borderEnabled || false,
+    // Border: auto-enabled when the template specifies borderColor or borderWidth,
+    // or when borderEnabled is set explicitly.
+    borderEnabled: cfg.borderEnabled !== undefined
+      ? cfg.borderEnabled
+      : (cfg.borderColor !== undefined || cfg.borderWidth !== undefined),
     borderColor: cfg.borderColor || '#ffffff',
     borderWidth: cfg.borderWidth || DEFAULT_FRAME_BORDER_WIDTH,
     _templateState: state,
@@ -2427,6 +2512,13 @@ function createTemplateState(tmpl) {
     state.cells.push(cellState);
   });
 
+  // Initialize text boxes from template config
+  if (tmpl.textBoxes && tmpl.textBoxes.length) {
+    tmpl.textBoxes.forEach(tbCfg => {
+      createTextBoxFromConfig(state, tbCfg);
+    });
+  }
+
   return state;
 }
 
@@ -2494,6 +2586,9 @@ function applyUserBorder(s) {
     } else {
       s.userBorderEl.style.border = `${width}px solid ${color}`;
     }
+    // Suppress placeholder border + upload glyph so the user's own styling
+    // is the only border on the frame.
+    s.el.classList.add('has-user-border');
   } else {
     s.userBorderEl.style.border = 'none';
     if (s.userBorderSvgEl) {
@@ -2503,6 +2598,7 @@ function applyUserBorder(s) {
         pathEl.style.strokeWidth = '0px';
       }
     }
+    s.el.classList.remove('has-user-border');
   }
 }
 
@@ -3118,11 +3214,73 @@ window.addEventListener('mouseup', (e) => {
 
     if (mW > 4 || mH > 4) {
       const state = templateStates[activeTemplateIndex];
+
+      // Generic AABB partial-overlap test: two rects overlap if they are not
+      // fully disjoint along either axis.
+      const rectsOverlap = (aL, aT, aR, aB, bL, bT, bR, bB) =>
+        !(aR < bL || aL > bR || aB < bT || aT > bB);
+
+      // For shaped frames, we want a hit only when part of the actual SVG
+      // shape (not its bounding rectangle) is inside the marquee. We do this
+      // by sampling a grid of points inside the intersection of the marquee
+      // and the frame's bbox, converting to the frame's local SVG-path
+      // coordinate space, and testing each point with isPointInFill on the
+      // shape's path element.
+      const shapeIntersectsMarquee = (cellState, cfg, mL, mT, mR, mB) => {
+        // Intersection of marquee with frame bbox (in canvas coords).
+        const iL = Math.max(mL, cfg.x);
+        const iT = Math.max(mT, cfg.y);
+        const iR = Math.min(mR, cfg.x + cfg.w);
+        const iB = Math.min(mB, cfg.y + cfg.h);
+        if (iR <= iL || iB <= iT) return false; // bboxes disjoint
+
+        const pathEl = cellState.el.querySelector('.shape-outline svg .outline-path');
+        if (!pathEl || typeof pathEl.isPointInFill !== 'function') {
+          // Fallback: if we can't test the path, treat bbox overlap as a hit.
+          return true;
+        }
+
+        // The SVG's viewBox is "0 0 cfg.w cfg.h", so a canvas point (cx, cy)
+        // maps to local path coords (cx - cfg.x, cy - cfg.y).
+        const svgEl = pathEl.ownerSVGElement;
+        const pt = svgEl && svgEl.createSVGPoint ? svgEl.createSVGPoint() : null;
+
+        // Sample density — fine enough to reliably catch edges on the shapes
+        // we support (circle, rounded square, hexagon) even for thin slivers.
+        const STEPS = 12;
+        for (let iy = 0; iy <= STEPS; iy++) {
+          const cy = iT + ((iB - iT) * iy) / STEPS;
+          const ly = cy - cfg.y;
+          for (let ix = 0; ix <= STEPS; ix++) {
+            const cx = iL + ((iR - iL) * ix) / STEPS;
+            const lx = cx - cfg.x;
+            if (pt) {
+              pt.x = lx;
+              pt.y = ly;
+              if (pathEl.isPointInFill(pt)) return true;
+            } else {
+              // Older engines: isPointInFill accepts a DOMPoint-like or
+              // nothing; skip if unsupported.
+              try {
+                if (pathEl.isPointInFill({ x: lx, y: ly })) return true;
+              } catch (_) { return true; }
+            }
+          }
+        }
+        return false;
+      };
+
       const hitIndices = [];
       cells.forEach((s, idx) => {
         const cfg = s.cfg;
-        if (cfg.x >= mLeft && cfg.y >= mTop &&
-            cfg.x + cfg.w <= mRight && cfg.y + cfg.h <= mBottom) {
+        const cL = cfg.x, cT = cfg.y, cR = cfg.x + cfg.w, cB = cfg.y + cfg.h;
+        // Quick AABB reject first.
+        if (!rectsOverlap(cL, cT, cR, cB, mLeft, mTop, mRight, mBottom)) return;
+
+        const isShaped = !!getScaledPath(cfg);
+        if (!isShaped) {
+          hitIndices.push(idx);
+        } else if (shapeIntersectsMarquee(s, cfg, mLeft, mTop, mRight, mBottom)) {
           hitIndices.push(idx);
         }
       });
@@ -3132,8 +3290,8 @@ window.addEventListener('mouseup', (e) => {
         state.textBoxes.forEach(tb => {
           const tbW = tb.width || tb.contentEl.offsetWidth;
           const tbH = tb.contentEl.offsetHeight;
-          if (tb.x >= mLeft && tb.y >= mTop &&
-              tb.x + tbW <= mRight && tb.y + tbH <= mBottom) {
+          if (rectsOverlap(tb.x, tb.y, tb.x + tbW, tb.y + tbH,
+                           mLeft, mTop, mRight, mBottom)) {
             hitTextBoxes.push(tb.id);
           }
         });
@@ -3898,6 +4056,76 @@ function cloneTextBox(src) {
   return tb;
 }
 
+// Create a text box from a template config object into the given state.
+// Used at template init time. Config supports any subset of these fields:
+//   x, y, width, text, fontName, fontSize, fontColor, bold, italic, underline, align
+// Unset fields fall back to sensible defaults.
+function createTextBoxFromConfig(state, cfg) {
+  if (!state.textBoxes) state.textBoxes = [];
+
+  // Resolve font: config gives us a fontName (e.g. "DM Sans"); look up the family string.
+  const fontDef = TEXT_FONTS.find(f => f.name === cfg.fontName) || TEXT_FONTS[0];
+
+  const id = 'tb_' + nextTextBoxId++;
+  const tb = {
+    id,
+    x: cfg.x || 0,
+    y: cfg.y || 0,
+    width: cfg.width || null,
+    text: cfg.text || '',
+    fontFamily: fontDef.family,
+    fontName: fontDef.name,
+    fontSize: cfg.fontSize || 24,
+    fontColor: cfg.fontColor || '#ffffff',
+    bold: !!cfg.bold,
+    italic: !!cfg.italic,
+    underline: !!cfg.underline,
+    align: cfg.align || 'left',
+    el: null,
+    contentEl: null,
+  };
+
+  const el = document.createElement('div');
+  el.className = 'text-box';
+  el.dataset.tbid = id;
+  el.style.left = tb.x + 'px';
+  el.style.top = tb.y + 'px';
+
+  const border = document.createElement('div');
+  border.className = 'text-border';
+  el.appendChild(border);
+
+  const content = document.createElement('div');
+  content.className = 'text-content';
+  content.contentEditable = 'false';
+  content.spellcheck = false;
+  content.innerHTML = tb.text;
+  content.style.fontFamily = tb.fontFamily;
+  content.style.fontSize = tb.fontSize + 'px';
+  content.style.color = tb.fontColor;
+  content.style.fontWeight = tb.bold ? 'bold' : 'normal';
+  content.style.fontStyle = tb.italic ? 'italic' : 'normal';
+  content.style.textDecoration = tb.underline ? 'underline' : 'none';
+  content.style.textAlign = tb.align;
+  if (tb.width) content.style.width = tb.width + 'px';
+  el.appendChild(content);
+
+  ['l', 'r', 't', 'b'].forEach(side => {
+    const h = document.createElement('div');
+    h.className = `text-handle th-${side}`;
+    h.dataset.thside = side;
+    el.appendChild(h);
+  });
+
+  tb.el = el;
+  tb.contentEl = content;
+  state.textBoxes.push(tb);
+
+  attachTextBoxEvents(tb);
+
+  return tb;
+}
+
 function duplicateTextBox(id, e) {
   const src = getTextBoxById(id);
   if (!src) return;
@@ -4061,6 +4289,8 @@ let shapeDrawType = null;
 let shapeCreateDragging = false;
 let shapeCreateStartX = 0, shapeCreateStartY = 0;
 let shapeCreatePreviewEl = null;
+let shapeDimLabelEl = null;
+let showShapeDimensions = true; // controlled by the "Show dimensions" toggle
 
 function enterShapeDrawMode(shapeType) {
   exitTextPlaceMode(); 
@@ -4081,6 +4311,16 @@ function exitShapeDrawMode() {
     b.blur();
   });
   hideGuides();
+  // Clean up any in-progress draw artifacts (e.g. if Escape is pressed mid-drag)
+  if (shapeCreatePreviewEl) {
+    shapeCreatePreviewEl.remove();
+    shapeCreatePreviewEl = null;
+  }
+  if (shapeDimLabelEl) {
+    shapeDimLabelEl.remove();
+    shapeDimLabelEl = null;
+  }
+  shapeCreateDragging = false;
 }
 
 document.querySelectorAll('.rs-shape-btn').forEach(btn => {
@@ -4093,6 +4333,20 @@ document.querySelectorAll('.rs-shape-btn').forEach(btn => {
     }
   });
 });
+
+// Show-dimensions toggle
+{
+  const dimToggle = document.getElementById('rsDimLabelToggle');
+  if (dimToggle) {
+    dimToggle.addEventListener('change', () => {
+      showShapeDimensions = dimToggle.checked;
+      if (!showShapeDimensions && shapeDimLabelEl) {
+        shapeDimLabelEl.remove();
+        shapeDimLabelEl = null;
+      }
+    });
+  }
+}
 
 canvasArea.addEventListener('mousedown', (e) => {
   if (!shapeDrawMode) return;
@@ -4124,6 +4378,16 @@ canvasArea.addEventListener('mousedown', (e) => {
   shapeCreatePreviewEl.style.width = '0px';
   shapeCreatePreviewEl.style.height = '0px';
   canvasArea.appendChild(shapeCreatePreviewEl);
+
+  // Create the dimension label if the toggle is on
+  if (showShapeDimensions) {
+    shapeDimLabelEl = document.createElement('div');
+    shapeDimLabelEl.className = 'shape-draw-dim-label';
+    shapeDimLabelEl.textContent = '0 × 0';
+    shapeDimLabelEl.style.left = shapeCreateStartX + 'px';
+    shapeDimLabelEl.style.top = shapeCreateStartY + 'px';
+    canvasArea.appendChild(shapeDimLabelEl);
+  }
 
   deselectAll();
 }, true);
@@ -4216,6 +4480,13 @@ window.addEventListener('mousemove', (e) => {
   shapeCreatePreviewEl.style.width = width + 'px';
   shapeCreatePreviewEl.style.height = height + 'px';
 
+  // Update the dimension label (follows the bottom-right corner of the preview)
+  if (shapeDimLabelEl) {
+    shapeDimLabelEl.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+    shapeDimLabelEl.style.left = (left + width) + 'px';
+    shapeDimLabelEl.style.top = (top + height) + 'px';
+  }
+
   showDrawRectGuides(left, top, width, height);
 
   const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
@@ -4286,6 +4557,11 @@ window.addEventListener('mouseup', (e) => {
   if (shapeCreatePreviewEl) {
     shapeCreatePreviewEl.remove();
     shapeCreatePreviewEl = null;
+  }
+
+  if (shapeDimLabelEl) {
+    shapeDimLabelEl.remove();
+    shapeDimLabelEl = null;
   }
 
   const rect = canvasArea.getBoundingClientRect();
@@ -4360,7 +4636,11 @@ let arrowKeyFrameStarts = null;
 let arrowKeyTextStarts = null;       
 let arrowKeyAccumDx = 0;             
 let arrowKeyAccumDy = 0;
-let arrowKeySessionTimer = null;     
+let arrowKeySessionTimer = null;
+
+// ADD THESE TWO LINES:
+let fineModeSessionActive = false;
+let fineModeSessionTimer = null;
 
 function resetArrowKeySession() {
   arrowKeyFrameStarts = null;
@@ -4380,6 +4660,60 @@ window.addEventListener('keydown', (e) => {
 
   e.preventDefault();
 
+  // Check for Ctrl / Meta (Cmd) for fine mode
+  const fineMode = e.ctrlKey || e.metaKey;
+
+  if (fineMode) {
+    // 1. Build current position maps
+    const frameCurrent = new Map();
+    selectedIndices.forEach(idx => {
+      const s = cells[idx];
+      if (s) frameCurrent.set(idx, { x: s.cfg.x, y: s.cfg.y });
+    });
+    const textCurrent = new Map();
+    selectedTextBoxIds.forEach(tbId => {
+      const tb = getTextBoxById(tbId);
+      if (tb) textCurrent.set(tbId, { x: tb.x, y: tb.y });
+    });
+
+    // 2. Save state once per sequence of fine-moves
+    if (!fineModeSessionActive) {
+      saveState();
+      fineModeSessionActive = true;
+    }
+    
+    // Reset the coarse session so a regular press afterwards starts fresh
+    if (arrowKeyFrameStarts) resetArrowKeySession();
+
+    let dx = 0, dy = 0;
+    if (e.key === 'ArrowLeft') dx = -1;
+    else if (e.key === 'ArrowRight') dx = 1;
+    else if (e.key === 'ArrowUp') dy = -1;
+    else if (e.key === 'ArrowDown') dy = 1;
+
+    // 3. Apply exact 1px positions directly (NO applyAlignmentSnap)
+    applyDragPositions(
+      dx, dy,
+      frameCurrent.size > 0 ? frameCurrent : null,
+      textCurrent.size > 0 ? textCurrent : null
+    );
+
+    // 4. Show guides only when alignment is exactly identical
+    showAlignmentGuidesForCurrentPositions();
+
+    clearTimeout(arrowKeyGuideTimer);
+    arrowKeyGuideTimer = setTimeout(() => hideGuides(), 500);
+
+    // Reset fine-mode session after idle
+    clearTimeout(fineModeSessionTimer);
+    fineModeSessionTimer = setTimeout(() => { fineModeSessionActive = false; }, 800);
+    return;
+  }
+
+  // --- EXISTING COARSE MODE (Standard 3px Snapping) ---
+  fineModeSessionActive = false;
+  clearTimeout(fineModeSessionTimer);
+  
   const selectionChanged = arrowKeyFrameStarts && (
     arrowKeyFrameStarts.size !== selectedIndices.size ||
     ![...selectedIndices].every(i => arrowKeyFrameStarts.has(i)) ||
@@ -4412,6 +4746,8 @@ window.addEventListener('keydown', (e) => {
 
   const dragFrameSet = new Set(arrowKeyFrameStarts.keys());
   const dragTextSet = new Set(arrowKeyTextStarts.keys());
+  
+  // Snap applied here for standard arrow keys
   const { dx, dy } = applyAlignmentSnap(
     arrowKeyAccumDx, arrowKeyAccumDy, dragFrameSet, dragTextSet,
     arrowKeyFrameStarts.size > 0 ? arrowKeyFrameStarts : null,
@@ -4430,6 +4766,92 @@ window.addEventListener('keydown', (e) => {
   clearTimeout(arrowKeySessionTimer);
   arrowKeySessionTimer = setTimeout(resetArrowKeySession, 800);
 });
+
+
+// Add this helper function below the keydown listener
+function showAlignmentGuidesForCurrentPositions() {
+  const dragFrameSet = new Set(selectedIndices);
+  const dragTextSet = new Set(selectedTextBoxIds);
+  const targets = getAlignmentTargets(dragFrameSet, dragTextSet);
+  const { hEdges, vEdges } = getEdgeAlignmentTargets(dragFrameSet, dragTextSet);
+
+  const guideHSet = new Set();
+  const guideVSet = new Set();
+
+  // Check exact alignment for frames
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s) return;
+    const cx = s.cfg.x + s.cfg.w / 2;
+    const cy = s.cfg.y + s.cfg.h / 2;
+    const left = s.cfg.x;
+    const right = s.cfg.x + s.cfg.w;
+    const top = s.cfg.y;
+    const bottom = s.cfg.y + s.cfg.h;
+    
+    for (const t of targets) {
+      if (Math.abs(cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
+      if (Math.abs(cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
+    }
+    for (const ve of vEdges) {
+      if (Math.abs(left - ve) < 0.5) guideVSet.add(Math.round(ve));
+      if (Math.abs(right - ve) < 0.5) guideVSet.add(Math.round(ve));
+    }
+    for (const he of hEdges) {
+      if (Math.abs(top - he) < 0.5) guideHSet.add(Math.round(he));
+      if (Math.abs(bottom - he) < 0.5) guideHSet.add(Math.round(he));
+    }
+  });
+
+  // Check exact alignment for text boxes
+  selectedTextBoxIds.forEach(tbId => {
+    const tb = getTextBoxById(tbId);
+    if (!tb) return;
+    const w = tb.width || tb.contentEl.offsetWidth;
+    const h = tb.contentEl.offsetHeight;
+    const cx = tb.x + w / 2;
+    const cy = tb.y + h / 2;
+    const left = tb.x;
+    const right = tb.x + w;
+    const top = tb.y;
+    const bottom = tb.y + h;
+    
+    for (const t of targets) {
+      if (Math.abs(cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
+      if (Math.abs(cy - t.cy) < 0.5) guideHSet.add(Math.round(t.cy));
+    }
+    for (const ve of vEdges) {
+      if (Math.abs(left - ve) < 0.5) guideVSet.add(Math.round(ve));
+      if (Math.abs(right - ve) < 0.5) guideVSet.add(Math.round(ve));
+    }
+    for (const he of hEdges) {
+      if (Math.abs(top - he) < 0.5) guideHSet.add(Math.round(he));
+      if (Math.abs(bottom - he) < 0.5) guideHSet.add(Math.round(he));
+    }
+  });
+
+  // Apply visual guides to DOM
+  const guideHArr = [...guideHSet];
+  const guideVArr = [...guideVSet];
+  
+  guideHArr.forEach((y, i) => {
+    const g = ensureGuideH(i);
+    g.style.top = y + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideHArr.length; i < activeGuideHs.length; i++) {
+    activeGuideHs[i].style.display = 'none';
+  }
+  
+  guideVArr.forEach((x, i) => {
+    const g = ensureGuideV(i);
+    g.style.left = x + 'px';
+    g.style.display = '';
+  });
+  for (let i = guideVArr.length; i < activeGuideVs.length; i++) {
+    activeGuideVs[i].style.display = 'none';
+  }
+}
 
 function syncFormatUIToSelection() {
   const section = document.getElementById('textFormatSection');
@@ -4874,6 +5296,55 @@ document.getElementById('downloadBtn').addEventListener('click', async () => {
 
 TEMPLATES.forEach((t, i) => { t._index = i; });
 switchTemplate(0);
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   TEMPLATE EXPORTER                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('saveTemplateBtn').addEventListener('click', () => {
+  const state = templateStates[activeTemplateIndex];
+  
+  // 1. Format Frames (Accurately capturing live border states)
+  const framesStr = state.cells.map(c => {
+    const cfg = c.cfg;
+    const shapeStr = cfg.shape ? `'${cfg.shape}'` : 'null';
+    return `      { x: ${Math.round(cfg.x)}, y: ${Math.round(cfg.y)}, w: ${Math.round(cfg.w)}, h: ${Math.round(cfg.h)}, shape: ${shapeStr}, label: '${cfg.label || 'Frame'}', borderEnabled: ${c.borderEnabled}, borderColor: '${c.borderColor}', borderWidth: ${c.borderWidth} }`;
+  }).join(',\n');
+
+  // 2. Format TextBoxes
+  const textBoxesStr = (state.textBoxes || []).map(tb => {
+    const safeText = JSON.stringify(tb.text); 
+    const w = tb.width ? Math.round(tb.width) : 'null';
+    return `      { x: ${Math.round(tb.x)}, y: ${Math.round(tb.y)}, width: ${w}, text: ${safeText}, fontName: '${tb.fontName}', fontSize: ${tb.fontSize}, fontColor: '${tb.fontColor}', bold: ${tb.bold}, italic: ${tb.italic}, underline: ${tb.underline}, align: '${tb.align}' }`;
+  }).join(',\n');
+
+  // 3. Assemble the full template object string
+  const templateString = `  {
+    name: 'Custom Template',
+    description: '${CANVAS_W}×${CANVAS_H} · ${state.cells.length} frames',
+    canvasW: ${CANVAS_W},
+    canvasH: ${CANVAS_H},
+    bgColor: '${CANVAS_BG_COLOR}',
+    bgImage: null,
+    frames: [
+${framesStr}
+    ],
+    textBoxes: [
+${textBoxesStr}
+    ],
+  },`;
+
+  // 4. Copy to Clipboard
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(templateString).then(() => {
+      alert('✅ Template code copied to clipboard!\n\nYour border colors and widths have been captured.');
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+      prompt('Copy the template code below:', templateString);
+    });
+  } else {
+    // Fallback for older browsers or non-HTTPS local environments
+    prompt('Copy the template code below (Ctrl+C / Cmd+C):', templateString);
+  }
+});
 </script>
 </body>
 </html>
