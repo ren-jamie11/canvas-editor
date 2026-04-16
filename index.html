@@ -852,7 +852,8 @@
     Drag to move frames · Scroll to resize frames · <b>Double-click empty frame</b> to upload · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
     <b>Shift+Drag</b> to pan image · <b>Shift+Scroll</b> to zoom image · <b>Ctrl+Drag</b> to duplicate<br/>
     <b>T tool</b>: click canvas to place text · <b>Double-click</b> text to edit · <b>Scroll</b> selected text to resize<br/>
-    Unlock background to drag &amp; scroll-zoom the background image
+    Unlock background to drag &amp; scroll-zoom the background image<br/>
+    <b>Ctrl+Z</b> Undo · <b>Ctrl+Y</b> Redo
   </div>
 
   <button id="downloadBtn" class="download-btn">Download Canvas (PNG)</button>
@@ -946,6 +947,226 @@
 </div>
 
 <script>
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                                                                        ║
+// ║   UNDO / REDO ENGINE                                                   ║
+// ║                                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const UNDO_WAIT_SECONDS = 0.5;
+const UNDO_CONSECUTIVE_FREQ_SECONDS = 0.1;
+let undoTimer = null;
+let redoTimer = null;
+let hasSavedForThisDrag = false;
+
+let scrollSessionTimer = null;
+let isScrollingSession = false;
+
+function handleScrollStart() {
+  if (!isScrollingSession) {
+    saveState();
+    isScrollingSession = true;
+  }
+  clearTimeout(scrollSessionTimer);
+  scrollSessionTimer = setTimeout(() => {
+    isScrollingSession = false;
+  }, 400);
+}
+
+function captureState(state) {
+  return {
+    bg: {
+      src: state.bgEl ? state.bgEl.src : '',
+      scale: state.bgScale,
+      posX: state.bgPosX,
+      posY: state.bgPosY,
+      loaded: state.bgLoaded,
+      naturalW: state.bgNaturalW,
+      naturalH: state.bgNaturalH
+    },
+    cells: state.cells.map(c => ({
+      cfg: JSON.parse(JSON.stringify(c.cfg)),
+      loaded: c.loaded,
+      src: c.img.src,
+      scale: c.scale,
+      posX: c.posX,
+      posY: c.posY,
+      naturalW: c.naturalW,
+      naturalH: c.naturalH,
+      borderEnabled: c.borderEnabled,
+      borderColor: c.borderColor,
+      borderWidth: c.borderWidth
+    })),
+    textBoxes: (state.textBoxes || []).map(tb => ({
+      id: tb.id,
+      x: tb.x,
+      y: tb.y,
+      width: tb.width,
+      text: tb.text,
+      fontFamily: tb.fontFamily,
+      fontName: tb.fontName,
+      fontSize: tb.fontSize,
+      fontColor: tb.fontColor,
+      bold: tb.bold,
+      italic: tb.italic,
+      underline: tb.underline,
+      align: tb.align
+    }))
+  };
+}
+
+function saveState() {
+  if (activeTemplateIndex < 0) return;
+  const state = templateStates[activeTemplateIndex];
+  if (!state.undoStack) state.undoStack = [];
+  if (!state.redoStack) state.redoStack = [];
+
+  state.undoStack.push(captureState(state));
+  if (state.undoStack.length > 50) state.undoStack.shift();
+  state.redoStack = []; 
+}
+
+function applyState(idx, snapshot) {
+  const state = templateStates[idx];
+  const tmpl = TEMPLATES[idx];
+
+  // 1. Clean up Background
+  state.bgLoaded = snapshot.bg.loaded;
+  state.bgScale = snapshot.bg.scale;
+  state.bgPosX = snapshot.bg.posX;
+  state.bgPosY = snapshot.bg.posY;
+  state.bgNaturalW = snapshot.bg.naturalW;
+  state.bgNaturalH = snapshot.bg.naturalH;
+  if (state.bgLoaded && snapshot.bg.src) {
+    state.bgEl.src = snapshot.bg.src;
+  } else {
+    state.bgEl.src = '';
+  }
+  applyBgTransform(state);
+
+  // 2. Clean up Cells
+  state.cells.forEach(c => {
+    c.el.remove();
+    c.controlsEl.remove();
+  });
+  state.cells = [];
+  tmpl.frames = [];
+
+  snapshot.cells.forEach((cSnap, i) => {
+    const cfgClone = JSON.parse(JSON.stringify(cSnap.cfg));
+    tmpl.frames.push(cfgClone);
+    const cell = createCell(state, tmpl, cfgClone, i);
+
+    cell.loaded = cSnap.loaded;
+    cell.scale = cSnap.scale;
+    cell.posX = cSnap.posX;
+    cell.posY = cSnap.posY;
+    cell.naturalW = cSnap.naturalW;
+    cell.naturalH = cSnap.naturalH;
+    cell.borderEnabled = cSnap.borderEnabled;
+    cell.borderColor = cSnap.borderColor;
+    cell.borderWidth = cSnap.borderWidth;
+
+    if (cell.loaded && cSnap.src) {
+      cell.img.src = cSnap.src;
+      cell.el.classList.add('has-image');
+    }
+
+    state.cells.push(cell);
+    canvasArea.appendChild(cell.el);
+    canvasArea.appendChild(cell.controlsEl);
+
+    applyTransformFor(state, i);
+    applyUserBorder(cell);
+    updateFrameShape(cell);
+  });
+  cells = state.cells;
+
+  // 3. Clean up Text Boxes
+  if (state.textBoxes) {
+    state.textBoxes.forEach(tb => tb.el.remove());
+  }
+  state.textBoxes = [];
+  
+  snapshot.textBoxes.forEach(tbSnap => {
+    restoreTextBox(tbSnap, state);
+  });
+
+  deselectAll();
+}
+
+function performUndo() {
+  if (activeTemplateIndex < 0) return;
+  const state = templateStates[activeTemplateIndex];
+  if (!state || !state.undoStack || state.undoStack.length === 0) return;
+
+  if (!state.redoStack) state.redoStack = [];
+  state.redoStack.push(captureState(state));
+
+  const snap = state.undoStack.pop();
+  applyState(activeTemplateIndex, snap);
+}
+
+function performRedo() {
+  if (activeTemplateIndex < 0) return;
+  const state = templateStates[activeTemplateIndex];
+  if (!state || !state.redoStack || state.redoStack.length === 0) return;
+
+  if (!state.undoStack) state.undoStack = [];
+  state.undoStack.push(captureState(state));
+
+  const snap = state.redoStack.pop();
+  applyState(activeTemplateIndex, snap);
+}
+
+function handleUndoPress() {
+  performUndo();
+  undoTimer = setTimeout(() => {
+    undoTimer = setInterval(performUndo, UNDO_CONSECUTIVE_FREQ_SECONDS * 1000);
+  }, UNDO_WAIT_SECONDS * 1000);
+}
+
+function handleRedoPress() {
+  performRedo();
+  redoTimer = setTimeout(() => {
+    redoTimer = setInterval(performRedo, UNDO_CONSECUTIVE_FREQ_SECONDS * 1000);
+  }, UNDO_WAIT_SECONDS * 1000);
+}
+
+function clearUndoTimers() {
+  clearInterval(undoTimer);
+  clearTimeout(undoTimer);
+  undoTimer = null;
+}
+
+function clearRedoTimers() {
+  clearInterval(redoTimer);
+  clearTimeout(redoTimer);
+  redoTimer = null;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.contentEditable === 'true') return;
+  
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    if (!undoTimer && !e.repeat) handleUndoPress();
+  } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+    e.preventDefault();
+    if (!redoTimer && !e.repeat) handleRedoPress();
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key.toLowerCase() === 'z') clearUndoTimers();
+  if (e.key.toLowerCase() === 'y') clearRedoTimers();
+  if (e.key === 'Control' || e.key === 'Meta') {
+    clearUndoTimers();
+    clearRedoTimers();
+  }
+});
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║                                                                        ║
 // ║   SHAPE LIBRARY                                                        ║
@@ -953,56 +1174,17 @@
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 const SHAPES = {
-  // Drawable shapes (available in the Add Frame tool)
-  square: null, // null shape = rectangle (no clip-path)
-  roundedSquare: {
-    viewBox: '0 0 100 100',
-    path: 'M16 0 L84 0 Q100 0 100 16 L100 84 Q100 100 84 100 L16 100 Q0 100 0 84 L0 16 Q0 0 16 0 Z'
-  },
-  circle: {
-    viewBox: '0 0 100 100',
-    path: 'M50 0 C77.6 0 100 22.4 100 50 C100 77.6 77.6 100 50 100 C22.4 100 0 77.6 0 50 C0 22.4 22.4 0 50 0 Z'
-  },
-  hexagon: {
-    viewBox: '0 0 100 87',
-    path: 'M25 0 L75 0 L100 43.5 L75 87 L25 87 L0 43.5 Z'
-  },
-  // Organic shapes (used in templates)
-  amoeba: {
-    viewBox: '0 0 120 80',
-    path: 'M60 6 C78 4 95 12 104 24 C112 36 108 48 98 56 C90 62 78 64 68 68 C58 72 48 74 38 70 C28 66 18 60 12 50 C6 40 4 28 12 18 C20 8 38 8 60 6 Z'
-  },
-  heart: {
-    viewBox: '0 0 100 100',
-    path: 'M50 88 C38 78 8 58 8 36 C8 20 20 8 36 8 C44 8 50 14 50 14 C50 14 56 8 64 8 C80 8 92 20 92 36 C92 58 62 78 50 88 Z'
-  },
-  splat: {
-    viewBox: '0 0 100 100',
-    path: 'M50 8 C58 8 65 18 70 22 C78 16 88 14 90 22 C93 32 84 38 80 44 C86 50 92 58 88 66 C84 74 74 72 68 70 C66 78 60 88 50 90 C40 88 34 78 32 70 C26 72 16 74 12 66 C8 58 14 50 20 44 C16 38 7 32 10 22 C12 14 22 16 30 22 C35 18 42 8 50 8 Z'
-  },
-  peanut: {
-    viewBox: '0 0 130 70',
-    path: 'M30 10 C44 4 56 10 62 18 C66 12 74 6 88 8 C104 10 118 24 116 38 C114 52 100 64 86 62 C76 60 68 54 64 48 C60 54 52 62 40 64 C26 66 10 56 8 40 C6 26 16 14 30 10 Z'
-  },
-  cross: {
-    viewBox: '0 0 100 100',
-    path: 'M50 6 C58 6 62 18 62 28 C70 22 82 14 90 20 C96 26 90 40 82 46 C88 50 96 56 94 66 C90 76 78 78 68 72 C64 80 58 92 50 94 C42 92 36 80 32 72 C22 78 10 76 6 66 C4 56 12 50 18 46 C10 40 4 26 10 20 C18 14 30 22 38 28 C38 18 42 6 50 6 Z'
-  },
-  bean: {
-    viewBox: '0 0 130 80',
-    path: 'M40 10 C56 4 72 6 86 12 C100 18 116 30 118 44 C120 58 108 70 92 72 C76 74 64 68 54 60 C46 66 34 74 22 72 C10 70 2 58 4 44 C6 30 20 16 40 10 Z'
-  }
+  square: null,
+  roundedSquare: { viewBox: '0 0 100 100', path: 'M16 0 L84 0 Q100 0 100 16 L100 84 Q100 100 84 100 L16 100 Q0 100 0 84 L0 16 Q0 0 16 0 Z' },
+  circle: { viewBox: '0 0 100 100', path: 'M50 0 C77.6 0 100 22.4 100 50 C100 77.6 77.6 100 50 100 C22.4 100 0 77.6 0 50 C0 22.4 22.4 0 50 0 Z' },
+  hexagon: { viewBox: '0 0 100 87', path: 'M25 0 L75 0 L100 43.5 L75 87 L25 87 L0 43.5 Z' },
+  amoeba: { viewBox: '0 0 120 80', path: 'M60 6 C78 4 95 12 104 24 C112 36 108 48 98 56 C90 62 78 64 68 68 C58 72 48 74 38 70 C28 66 18 60 12 50 C6 40 4 28 12 18 C20 8 38 8 60 6 Z' },
+  heart: { viewBox: '0 0 100 100', path: 'M50 88 C38 78 8 58 8 36 C8 20 20 8 36 8 C44 8 50 14 50 14 C50 14 56 8 64 8 C80 8 92 20 92 36 C92 58 62 78 50 88 Z' },
+  splat: { viewBox: '0 0 100 100', path: 'M50 8 C58 8 65 18 70 22 C78 16 88 14 90 22 C93 32 84 38 80 44 C86 50 92 58 88 66 C84 74 74 72 68 70 C66 78 60 88 50 90 C40 88 34 78 32 70 C26 72 16 74 12 66 C8 58 14 50 20 44 C16 38 7 32 10 22 C12 14 22 16 30 22 C35 18 42 8 50 8 Z' },
+  peanut: { viewBox: '0 0 130 70', path: 'M30 10 C44 4 56 10 62 18 C66 12 74 6 88 8 C104 10 118 24 116 38 C114 52 100 64 86 62 C76 60 68 54 64 48 C60 54 52 62 40 64 C26 66 10 56 8 40 C6 26 16 14 30 10 Z' },
+  cross: { viewBox: '0 0 100 100', path: 'M50 6 C58 6 62 18 62 28 C70 22 82 14 90 20 C96 26 90 40 82 46 C88 50 96 56 94 66 C90 76 78 78 68 72 C64 80 58 92 50 94 C42 92 36 80 32 72 C22 78 10 76 6 66 C4 56 12 50 18 46 C10 40 4 26 10 20 C18 14 30 22 38 28 C38 18 42 6 50 6 Z' },
+  bean: { viewBox: '0 0 130 80', path: 'M40 10 C56 4 72 6 86 12 C100 18 116 30 118 44 C120 58 108 70 92 72 C76 74 64 68 54 60 C46 66 34 74 22 72 C10 70 2 58 4 44 C6 30 20 16 40 10 Z' }
 };
-
-
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║                                                                        ║
-// ║   TEMPLATE CONFIGURATIONS                                              ║
-// ║                                                                        ║
-// ║   To add a new template, simply push a new object into this array.     ║
-// ║   No other code changes are needed.                                    ║
-// ║                                                                        ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
 
 const TEMPLATES = [
   {
@@ -1047,27 +1229,15 @@ const TEMPLATES = [
       { x: 260, y: 320, w: 220, h: 220, shape: 'cross', label: 'Cross' },
       { x: 500, y: 20, w: 460, h: 280, shape: 'bean', label: 'Bean' },
       { x: 800, y: 320, w: 220, h: 220, shape: 'heart', label: 'Heart' },
-
     ],
   },
 ];
 
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║   FRAME BORDER (for empty frames)                                      ║
-// ║   Adjust these to change the border around frames without images.      ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-
-const FRAME_BORDER_WIDTH = 1.5;           // px
+const FRAME_BORDER_WIDTH = 1.5;
 const FRAME_BORDER_COLOR = 'rgba(255, 255, 255, 0.36)';
+const SELECTION_BORDER_COLOR = '#ffffff';
+const SELECTION_BORDER_WIDTH = 3;
 
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║   SELECTION INDICATOR (for selected frames with images)                ║
-// ║   Edit these values to change the look of the selection border.        ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-const SELECTION_BORDER_COLOR = '#ffffff';    // color of the selection outline
-const SELECTION_BORDER_WIDTH = 3;            // reduced outline thickness so it doesn't break rendering
-
-// Inject as CSS custom properties so both CSS and SVG can reference them
 document.documentElement.style.setProperty('--frame-border-width', FRAME_BORDER_WIDTH + 'px');
 document.documentElement.style.setProperty('--frame-border-width-num', FRAME_BORDER_WIDTH);
 document.documentElement.style.setProperty('--frame-border-color', FRAME_BORDER_COLOR);
@@ -1075,23 +1245,13 @@ document.documentElement.style.setProperty('--selection-border-color', SELECTION
 document.documentElement.style.setProperty('--selection-border-width', SELECTION_BORDER_WIDTH + 'px');
 document.documentElement.style.setProperty('--selection-border-width-num', SELECTION_BORDER_WIDTH);
 
-// Default border width for user-applied frame borders
 const DEFAULT_FRAME_BORDER_WIDTH = 1;
-
-
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║                                                                        ║
-// ║   EVERYTHING BELOW IS AUTOMATIC                                        ║
-// ║   (no changes needed when adding templates)                            ║
-// ║                                                                        ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
 
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 10;
 const ZOOM_STEP = 0.08;
 const IMAGE_RESIZE_SCROLL_TICK = 0.03;
 
-// ===================== SVG PATH SCALER =====================
 function scalePath(pathStr, viewBox, frameW, frameH) {
   const [, , vw, vh] = viewBox.split(' ').map(Number);
   const sx = frameW / vw;
@@ -1159,83 +1319,60 @@ function getScaledPath(frame) {
   return frame._scaledPath;
 }
 
-// ===================== PER-TEMPLATE STATE STORE =====================
-// Each template gets its own isolated state object, created once and reused.
-const templateStates = TEMPLATES.map(() => null); // lazily initialized
+const templateStates = TEMPLATES.map(() => null); 
 let activeTemplateIndex = -1;
 
-// Pointers into the active template's state (set by switchTemplate)
 let cells = [];
-let selectedIndices = new Set(); // multi-selection
+let selectedIndices = new Set();
 let CANVAS_W, CANVAS_H, CANVAS_BG_COLOR, CANVAS_BG_IMAGE, FRAMES;
 let bgImg = null, bgLoaded = false;
 
-// Drag / swap / resize state (transient — per interaction, not persisted)
 let dragging = false, dragCellIdx = -1;
 let dragStartX, dragStartY;
 let swapping = false, swapSourceIdx = -1, swapTargetIdx = -1;
 let resizing = false, resizeCellIdx = -1;
 let resizeHandle = '', resizeStartX, resizeStartY, resizeStartScale, resizeStartPosX, resizeStartPosY;
 
-// Frame stretch state (edge/corner drag to resize frame dimensions)
 let frameStretching = false;
 let frameStretchSide = '';
 let frameStretchStartX = 0, frameStretchStartY = 0;
-let frameStretchStartStates = null; // Map of idx -> { x, y, w, h, scale, posX, posY }
-let frameStretchStartTextStates = null; // Map of tbId -> { x, y, width }
+let frameStretchStartStates = null; 
+let frameStretchStartTextStates = null; 
 
-// Frame-level dragging (default click+drag)
 let frameDragging = false, frameDragIdx = -1;
 let frameDragStartX, frameDragStartY;
 
-// Axis-locked drag state (Ctrl+Shift+drag: lock to horizontal or vertical)
 let axisLockActive = false;
-let axisLockAxis = null;  // null = not yet determined, 'h' = horizontal, 'v' = vertical
+let axisLockAxis = null;  
 
-// Duplicate-drag state (Ctrl+click+drag) - Multi-duplicate supported
 let duplicating = false, dupSourceIdx = -1;
 let dupCloneIndices = [];
 let dupDragStartX, dupDragStartY;
-let dupStartPositions = new Map(); // srcIdx -> {x, y}
-let dupCloneToStartPos = new Map(); // cloneIdx -> {x, y}
+let dupStartPositions = new Map(); 
+let dupCloneToStartPos = new Map(); 
 
-// Text box clones created during a unified ctrl+drag duplicate operation
-let dupTextBoxSources = []; // source text box ids to duplicate
-let dupTextBoxCloneIds = []; // cloned text box ids
-let dupTextBoxCloneStartPos = new Map(); // cloneId -> {x, y}
+let dupTextBoxSources = []; 
+let dupTextBoxCloneIds = []; 
+let dupTextBoxCloneStartPos = new Map(); 
 
-// Background dragging state (when bg is unlocked)
 let bgDragging = false;
 let bgDragStartX, bgDragStartY, bgDragStartPosX, bgDragStartPosY;
 
-// Marquee (box) selection state
 let marqueeActive = false;
 let marqueeStartX = 0, marqueeStartY = 0;
 let marqueeEl = null;
 
-// Multi-drag state: stores starting positions for all selected frames/images
-let multiDragStartPositions = null; // Map of ci -> { posX, posY }
-let multiFrameDragStartPositions = null; // Map of ci -> { x, y }
+let multiDragStartPositions = null; 
+let multiFrameDragStartPositions = null; 
 
-// ===================== ALIGNMENT GUIDES =====================
-// Controls how close (in pixels) an object center must be to another
-// object's center before it snaps into alignment.
 const ALIGNMENT_CLICK_PIXELS = 8;
-
-// Controls how close (in pixels) a stretched edge must be to another
-// object's edge before it snaps into alignment.
 const ALIGNMENT_STRETCH_CLICK_PIXELS = 8;
-
 const ALIGNMENT_EDGE_CLICK_PIXELS = 8;
-// Controls how close (in pixels) a frame's width must be to its height
-// before it snaps to square proportions during stretching.
 const ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS = 8;
-
-// Controls how many pixels objects move per arrow key press
 const ARROW_KEY_MOVE_PIXELS = 3;
 
-let activeGuideHs = []; // horizontal guide line DOM elements
-let activeGuideVs = []; // vertical guide line DOM elements
+let activeGuideHs = [];
+let activeGuideVs = [];
 
 function ensureGuideH(index) {
   while (activeGuideHs.length <= index) {
@@ -1271,18 +1408,13 @@ function removeGuideEls() {
   activeGuideVs = [];
 }
 
-// Returns an array of { cx, cy } for all non-dragged objects on the canvas.
-// Also includes the canvas center itself as an alignment target.
 function getAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
   const targets = [];
-  // Canvas center
   targets.push({ cx: CANVAS_W / 2, cy: CANVAS_H / 2 });
-  // Frames
   cells.forEach((s, idx) => {
     if (excludeFrameIndices.has(idx)) return;
     targets.push({ cx: s.cfg.x + s.cfg.w / 2, cy: s.cfg.y + s.cfg.h / 2 });
   });
-  // Text boxes
   const tbs = getTextBoxes();
   tbs.forEach(tb => {
     if (excludeTextBoxIds.has(tb.id)) return;
@@ -1293,8 +1425,6 @@ function getAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
   return targets;
 }
 
-// Build the list of projected centers for each individual dragged object
-// given raw dx/dy from drag start positions.
 function getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositionsTextBoxes) {
   const centers = [];
   if (startPositionsFrames) {
@@ -1322,28 +1452,17 @@ function getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositi
   return centers;
 }
 
-// Given raw dx/dy deltas and the sets of objects being dragged,
-// compute snapped dx/dy by checking EACH dragged object individually
-// against all targets. The closest snap wins. Show guide lines for
-// all alignments that match after snapping.
-// Given raw dx/dy deltas and the sets of objects being dragged,
-// compute snapped dx/dy by checking EACH dragged object individually
-// against all targets. The closest snap wins. Show guide lines for
-// all alignments that match after snapping.
 function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, startPositionsFrames, startPositionsTextBoxes) {
   const centers = getDraggedObjectCenters(rawDx, rawDy, startPositionsFrames, startPositionsTextBoxes);
   
   const targets = getAlignmentTargets(dragFrameIndices, dragTextBoxIds);
-  // Fetch edge targets for the new edge snapping behavior
   const { hEdges, vEdges } = getEdgeAlignmentTargets(dragFrameIndices, dragTextBoxIds);
 
-  // Find the smallest snap correction across all dragged objects
   let bestSnapDxCorrection = null; 
   let bestSnapDxDist = Infinity;
   let bestSnapDyCorrection = null;
   let bestSnapDyDist = Infinity;
 
-  // 1. Check center alignments (Existing behavior)
   for (const c of centers) {
     for (const t of targets) {
       const distX = Math.abs(c.cx - t.cx);
@@ -1359,7 +1478,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
     }
   }
 
-  // 2. Check edge alignments (New behavior) - strictly for frames
   if (startPositionsFrames) {
     startPositionsFrames.forEach((start, idx) => {
       const s = cells[idx];
@@ -1369,7 +1487,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
       const projectedRight = projectedX + s.cfg.w;
       const projectedBottom = projectedY + s.cfg.h;
       
-      // Check vertical edges (x-axis snap)
       const checkVEdge = (edgeX) => {
         for (const ve of vEdges) {
           const dist = Math.abs(edgeX - ve);
@@ -1380,7 +1497,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
         }
       };
       
-      // Check horizontal edges (y-axis snap)
       const checkHEdge = (edgeY) => {
         for (const he of hEdges) {
           const dist = Math.abs(edgeY - he);
@@ -1401,14 +1517,11 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
   const snapDx = bestSnapDxCorrection !== null ? rawDx + bestSnapDxCorrection : rawDx;
   const snapDy = bestSnapDyCorrection !== null ? rawDy + bestSnapDyCorrection : rawDy;
 
-  // Now recompute centers and edges with snapped deltas to find ALL active guide lines
   const snappedCenters = getDraggedObjectCenters(snapDx, snapDy, startPositionsFrames, startPositionsTextBoxes);
 
-  // Collect unique guide positions (deduplicate to nearest pixel)
   const guideHSet = new Set();
   const guideVSet = new Set();
   
-  // Plot Center guides
   for (const c of snappedCenters) {
     for (const t of targets) {
       if (Math.abs(c.cx - t.cx) < 0.5) guideVSet.add(Math.round(t.cx));
@@ -1416,7 +1529,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
     }
   }
 
-  // Plot Edge guides (only for dragged frames)
   if (startPositionsFrames) {
     startPositionsFrames.forEach((start, idx) => {
       const s = cells[idx];
@@ -1440,7 +1552,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
   const guideHArr = [...guideHSet];
   const guideVArr = [...guideVSet];
 
-  // Show/hide horizontal guides
   guideHArr.forEach((y, i) => {
     const g = ensureGuideH(i);
     g.style.top = y + 'px';
@@ -1450,7 +1561,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
     activeGuideHs[i].style.display = 'none';
   }
 
-  // Show/hide vertical guides
   guideVArr.forEach((x, i) => {
     const g = ensureGuideV(i);
     g.style.left = x + 'px';
@@ -1463,7 +1573,6 @@ function applyAlignmentSnap(rawDx, rawDy, dragFrameIndices, dragTextBoxIds, star
   return { dx: snapDx, dy: snapDy };
 }
 
-// Helper: apply final positions for frames and text boxes after snap
 function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
   if (frameStartPositions) {
     frameStartPositions.forEach((start, idx) => {
@@ -1497,13 +1606,10 @@ function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
   }
 }
 
-// ===================== STRETCH EDGE ALIGNMENT =====================
-// Get the 4 edges (top, bottom, left, right) of all non-dragged objects as snap targets.
 function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
-  const hEdges = []; // horizontal edges (y values): top and bottom of objects
-  const vEdges = []; // vertical edges (x values): left and right of objects
+  const hEdges = []; 
+  const vEdges = []; 
 
-  // Canvas edges
   hEdges.push(0, CANVAS_H);
   vEdges.push(0, CANVAS_W);
 
@@ -1525,24 +1631,15 @@ function getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds) {
   return { hEdges, vEdges };
 }
 
-// Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
-// each stretched object's active edges against all target edges.
-// Returns { dx, dy } with snap corrections applied.
-// Given raw dx/dy and the stretch side, compute snapped dx/dy by checking
-// each stretched object's active edges against all target edges.
-// Returns { dx, dy } with snap corrections applied.
 function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stretchStartTextStates, excludeFrameIndices, excludeTextBoxIds, shiftConstrain, altConstrain) {
   const { hEdges, vEdges } = getEdgeAlignmentTargets(excludeFrameIndices, excludeTextBoxIds);
 
-  // Determine which axes can snap based on the handle side
-  // When shift or alt is held, both dimensions change so both axes can snap
   const canSnapX = shiftConstrain || altConstrain || side.includes('l') || side.includes('r');
   const canSnapY = shiftConstrain || altConstrain || side.includes('t') || side.includes('b');
 
   let bestDxCorrection = null, bestDxDist = Infinity;
   let bestDyCorrection = null, bestDyDist = Infinity;
 
-  // Helper: compute projected geometry for a frame given dx/dy, including shift/alt-constrain and soft-snap
   function projectFrame(start, projDx, projDy) {
     let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
     if (side === 'r') { newW = start.w + projDx; }
@@ -1571,15 +1668,12 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       }
     } else if (altConstrain) {
       constrained = true;
-      const aspect = start.w / start.h; // preserve original aspect ratio
+      const aspect = start.w / start.h; 
       if (side === 'l' || side === 'r') {
-        // Width drives; height follows aspect ratio (anchored at top like shift)
         newH = newW / aspect;
       } else if (side === 't' || side === 'b') {
-        // Height drives; width follows aspect ratio (anchored at left like shift)
         newW = newH * aspect;
       } else {
-        // Corner: scale uniformly by the dimension that grew more
         const ratioW = newW / start.w;
         const ratioH = newH / start.h;
         const ratio = Math.max(ratioW, ratioH);
@@ -1607,7 +1701,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
 
   let isConstrained = false;
 
-  // Check each stretched frame's active edges
   if (stretchStartStates) {
     stretchStartStates.forEach((start, idx) => {
       const s = cells[idx];
@@ -1616,7 +1709,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
       const { newX, newY, newW, newH, constrained } = projectFrame(start, rawDx, rawDy);
       if (constrained) isConstrained = true;
 
-      // Check vertical edges (left/right of object → snap dx)
       if (canSnapX) {
         const activeXEdge = side.includes('l') ? newX : side.includes('r') ? newX + newW : newX + newW;
         for (const ve of vEdges) {
@@ -1628,7 +1720,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
         }
       }
 
-      // Check horizontal edges (top/bottom of object → snap dy)
       if (canSnapY) {
         const activeYEdge = side.includes('t') ? newY : side.includes('b') ? newY + newH : newY + newH;
         for (const he of hEdges) {
@@ -1642,7 +1733,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
     });
   }
 
-  // Also check stretched text boxes
   if (stretchStartTextStates && canSnapX) {
     stretchStartTextStates.forEach((start, tbId) => {
       const tb = getTextBoxById(tbId);
@@ -1662,12 +1752,9 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
     });
   }
 
-  // Apply corrections to raw deltas
   let snapDx = rawDx, snapDy = rawDy;
 
-  // Handle corner/constrained snapping conflict
   if (isConstrained || shiftConstrain || altConstrain) {
-    // Compute the reference aspect ratio (for alt: original aspect; for shift/soft-snap: 1)
     let refAspect = 1;
     if (altConstrain && stretchStartStates && stretchStartStates.size > 0) {
       const firstStart = stretchStartStates.values().next().value;
@@ -1676,7 +1763,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
 
     if (side === 'l' || side === 'r' || side === 't' || side === 'b') {
       if ((side === 'l' || side === 'r') && bestDyCorrection !== null) {
-        // Convert dy correction to dx correction: for alt, dx = dy * aspect
         const convertedDx = altConstrain ? bestDyCorrection * refAspect : bestDyCorrection;
         if (bestDxCorrection === null || Math.abs(convertedDx) < Math.abs(bestDxCorrection)) {
           bestDxCorrection = convertedDx;
@@ -1684,7 +1770,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
         bestDyCorrection = null;
       }
       if ((side === 't' || side === 'b') && bestDxCorrection !== null) {
-        // Convert dx correction to dy correction: for alt, dy = dx / aspect
         const convertedDy = altConstrain ? bestDxCorrection / refAspect : bestDxCorrection;
         if (bestDyCorrection === null || Math.abs(convertedDy) < Math.abs(bestDyCorrection)) {
           bestDyCorrection = convertedDy;
@@ -1692,7 +1777,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
         bestDxCorrection = null;
       }
     } else {
-      // Corner handles under constraints
       if (bestDxCorrection !== null && bestDyCorrection !== null) {
         if (Math.abs(bestDxCorrection) < Math.abs(bestDyCorrection)) {
           const sign = side.includes('t') === side.includes('l') ? 1 : -1;
@@ -1718,7 +1802,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
     snapDy = rawDy + bestDyCorrection;
   }
 
-  // Now compute all active edges at snapped deltas to show guide lines
   const guideHSet = new Set();
   const guideVSet = new Set();
 
@@ -1741,7 +1824,6 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
     });
   }
 
-  // Show/hide guides
   const guideHArr = [...guideHSet];
   const guideVArr = [...guideVSet];
 
@@ -1766,13 +1848,11 @@ function applyStretchAlignmentSnap(rawDx, rawDy, side, stretchStartStates, stret
   return { dx: snapDx, dy: snapDy };
 }
 
-// DOM refs
 const sidebar      = document.getElementById('sidebar');
 const canvasArea    = document.getElementById('canvasArea');
 const zoomDisplay   = document.getElementById('zoomDisplay');
 const selectedLabel = document.getElementById('selectedLabel');
 
-// ===================== BUILD SIDEBAR TABS =====================
 const tabButtons = [];
 TEMPLATES.forEach((tmpl, idx) => {
   const btn = document.createElement('button');
@@ -1783,16 +1863,11 @@ TEMPLATES.forEach((tmpl, idx) => {
   tabButtons.push(btn);
 });
 
-// ===================== TEMPLATE SWITCHING =====================
 function switchTemplate(idx) {
   if (idx === activeTemplateIndex) return;
 
-  // Cancel any in-progress interactions
   cancelInteractions();
 
-  // Save nothing — state is already stored in templateStates[activeTemplateIndex]
-
-  // Update tab UI
   tabButtons.forEach((b, i) => b.classList.toggle('active', i === idx));
   activeTemplateIndex = idx;
 
@@ -1803,15 +1878,12 @@ function switchTemplate(idx) {
   CANVAS_BG_IMAGE = tmpl.bgImage;
   FRAMES = tmpl.frames;
 
-  // Ensure scaled paths are computed for this template's frames
   FRAMES.forEach(f => getScaledPath(f));
 
-  // Size the canvas
   canvasArea.style.width  = CANVAS_W + 'px';
   canvasArea.style.height = CANVAS_H + 'px';
   canvasArea.style.background = CANVAS_BG_COLOR;
 
-  // Initialize state for this template if first visit
   if (!templateStates[idx]) {
     templateStates[idx] = createTemplateState(tmpl);
   }
@@ -1822,7 +1894,6 @@ function switchTemplate(idx) {
   bgImg = state.bgImg;
   bgLoaded = state.bgLoaded;
 
-  // Rebuild DOM: clear canvas, add bg element then cells
   canvasArea.innerHTML = '';
   canvasArea.style.backgroundImage = 'none';
   if (state.bgEl) {
@@ -1835,11 +1906,14 @@ function switchTemplate(idx) {
     canvasArea.appendChild(s.el);
     canvasArea.appendChild(s.controlsEl);
   });
+  if (state.textBoxes) {
+    state.textBoxes.forEach(tb => {
+      canvasArea.appendChild(tb.el);
+    });
+  }
 
-  // Update lock toggle visual state
   updateBgLockUI();
 
-  // Re-apply selection highlight
   cells.forEach((s, i) => {
     s.el.classList.toggle('selected', selectedIndices.has(i));
     s.controlsEl.classList.toggle('visible', selectedIndices.has(i));
@@ -1878,10 +1952,6 @@ function cancelInteractions() {
   multiFrameDragStartPositions = null;
 }
 
-// ===================== CREATE ISOLATED STATE FOR A TEMPLATE =====================
-
-// Reusable function to create a single cell with DOM, state, and event handlers.
-// Can be called during initial template build or to duplicate a frame at runtime.
 function createCell(state, tmpl, cfg, i) {
   getScaledPath(cfg);
 
@@ -1932,12 +2002,10 @@ function createCell(state, tmpl, cfg, i) {
   const img = document.createElement('img');
   cell.appendChild(img);
 
-  // User-applied border element (inside cell, so it's clipped by clip-path for shapes)
   const userBorderEl = document.createElement('div');
   userBorderEl.className = 'cell-user-border';
   cell.appendChild(userBorderEl);
 
-  // For shaped cells, use an SVG border overlay that follows the shape path
   let userBorderSvgEl = null;
   if (sp) {
     userBorderSvgEl = document.createElement('div');
@@ -1946,7 +2014,6 @@ function createCell(state, tmpl, cfg, i) {
     cell.appendChild(userBorderSvgEl);
   }
 
-  // Frame controls overlay (separate from cell to avoid clip-path clipping)
   const controlsEl = document.createElement('div');
   controlsEl.className = 'frame-controls';
   controlsEl.style.left = cfg.x + 'px';
@@ -1989,18 +2056,11 @@ function createCell(state, tmpl, cfg, i) {
     _cellIndex: i,
   };
 
-  // Apply initial border if set in config
   applyUserBorder(cellState);
 
-  // ---- Event handlers (they capture cellState and state by closure) ----
-  // IMPORTANT: All handlers use cellState._cellIndex (not the construction-time i)
-  // so that deletion/duplication + re-indexing doesn't break references.
-  // Upload click is now deferred: handled via mouseup to distinguish click from drag.
-  // We suppress the default upload click handler entirely.
   upload.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
-    // Upload is triggered from mouseup instead (see frameDragging cleanup)
   });
 
   upload.addEventListener('wheel', (e) => {
@@ -2010,16 +2070,15 @@ function createCell(state, tmpl, cfg, i) {
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    saveState();
     loadFileIntoCellState(file, cellState, state, cellState._cellIndex);
     e.target.value = '';
   });
 
   cell.addEventListener('mousedown', (e) => {
     if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
-
     const ci = cellState._cellIndex;
 
-    // Ctrl+Shift: axis-locked frame dragging (horizontal or vertical only)
     if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -2033,7 +2092,7 @@ function createCell(state, tmpl, cfg, i) {
       frameDragStartX = e.clientX;
       frameDragStartY = e.clientY;
       axisLockActive = true;
-      axisLockAxis = null; // determined on first move
+      axisLockAxis = null; 
       multiFrameDragStartPositions = new Map();
       selectedIndices.forEach(idx => {
         const s = cells[idx];
@@ -2048,9 +2107,6 @@ function createCell(state, tmpl, cfg, i) {
       return;
     }
 
-    // Ctrl/Cmd (without Shift): enter a pending state — we don't know yet if it's a click
-    // (toggle multi-select) or a drag (duplicate multiple). The decision is deferred
-    // to mousemove (drag) or mouseup (click).
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -2067,19 +2123,16 @@ function createCell(state, tmpl, cfg, i) {
          dupStartPositions.set(idx, { x: cells[idx].cfg.x, y: cells[idx].cfg.y });
       });
 
-      // Also capture selected text boxes for unified duplication
       dupTextBoxSources = [...selectedTextBoxIds];
       dupTextBoxCloneIds = [];
       dupTextBoxCloneStartPos.clear();
       return;
     }
 
-    // For all other cases (no ctrl), select just this one if not already selected
     if (!selectedIndices.has(ci)) {
       selectCellFor(state, ci);
     }
 
-    // Shift+click on loaded cell: start image panning (move image inside frame)
     if (e.shiftKey && cellState.loaded) {
       e.preventDefault();
       e.stopPropagation();
@@ -2098,7 +2151,6 @@ function createCell(state, tmpl, cfg, i) {
       return;
     }
 
-    // Alt+click: replace image (was previously Ctrl+click)
     if (e.altKey && cellState.loaded) {
       e.preventDefault();
       e.stopPropagation();
@@ -2109,7 +2161,6 @@ function createCell(state, tmpl, cfg, i) {
     const now = Date.now();
     const isDoubleClick = (now - cellState.lastClickTime) < 300;
 
-    // Double-click on empty frame: open file upload
     if (!cellState.loaded && isDoubleClick) {
       e.preventDefault();
       e.stopPropagation();
@@ -2118,7 +2169,6 @@ function createCell(state, tmpl, cfg, i) {
       return;
     }
 
-    // Double-click on loaded frame: start swap
     if (cellState.loaded && isDoubleClick) {
       e.preventDefault();
       swapping = true;
@@ -2129,7 +2179,6 @@ function createCell(state, tmpl, cfg, i) {
     }
     cellState.lastClickTime = now;
 
-    // Default click+drag: start frame dragging for ALL selected frames AND text boxes
     {
       e.preventDefault();
       e.stopPropagation();
@@ -2143,7 +2192,6 @@ function createCell(state, tmpl, cfg, i) {
         multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
         s.el.classList.add('dragging');
       });
-      // Also capture selected text boxes for unified frame-level drag
       multiTextDragStartPositions = new Map();
       selectedTextBoxIds.forEach(tbId => {
         const t = getTextBoxById(tbId);
@@ -2154,21 +2202,17 @@ function createCell(state, tmpl, cfg, i) {
 
   cell.addEventListener('wheel', (e) => {
     if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
-
     const ci = cellState._cellIndex;
-
-    // Scroll actions require the frame to be selected
     if (!selectedIndices.has(ci)) return;
-
+    
+    handleScrollStart();
     const targetIndices = [...selectedIndices];
 
     if (e.shiftKey) {
-      // Shift+scroll: zoom/pan image inside frame
       if (!cellState.loaded) return;
       e.preventDefault();
 
       const delta = e.deltaY > 0 ? -IMAGE_RESIZE_SCROLL_TICK : IMAGE_RESIZE_SCROLL_TICK;
-
       const hoveredRect = cell.getBoundingClientRect();
       const mx = e.clientX - hoveredRect.left;
       const my = e.clientY - hoveredRect.top;
@@ -2176,7 +2220,6 @@ function createCell(state, tmpl, cfg, i) {
       targetIndices.forEach(idx => {
         const s = cells[idx];
         if (!s || !s.loaded) return;
-
         const oldScale = s.scale;
         s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s.scale + delta));
 
@@ -2195,7 +2238,6 @@ function createCell(state, tmpl, cfg, i) {
       return;
     }
 
-    // Default scroll (no shift): resize frame
     e.preventDefault();
     const delta = e.deltaY > 0 ? -5 : 5;
 
@@ -2233,7 +2275,6 @@ function createCell(state, tmpl, cfg, i) {
     updateLabel();
   }, { passive: false });
 
-  // Stretch handle mousedown on the controls overlay (outside clip-path)
   controlsEl.addEventListener('mousedown', (e) => {
     if (TEMPLATES[activeTemplateIndex] !== tmpl) return;
     const stretchHandleEl = e.target.closest('.frame-stretch-handle');
@@ -2269,7 +2310,6 @@ function createCell(state, tmpl, cfg, i) {
   return cellState;
 }
 
-// Re-index all cells in the active state so _cellIndex and dataset.index stay in sync.
 function reIndexCells(state) {
   state.cells.forEach((c, idx) => {
     c.el.dataset.index = idx;
@@ -2277,15 +2317,12 @@ function reIndexCells(state) {
   });
 }
 
-// Duplicate a cell: creates a deep copy of its frame config and image data,
-// appends the new cell to the state and the DOM, and returns the new cell's index.
 function duplicateCell(sourceIdx, newX, newY) {
   const state = templateStates[activeTemplateIndex];
   const tmpl = TEMPLATES[activeTemplateIndex];
   const src = state.cells[sourceIdx];
   if (!src) return -1;
 
-  // Deep-copy the frame config so the clone is independent
   const newCfg = {
     x: newX,
     y: newY,
@@ -2297,23 +2334,15 @@ function duplicateCell(sourceIdx, newX, newY) {
     borderColor: src.borderColor,
     borderWidth: src.borderWidth,
   };
-  // Clear any cached scaled path so it's recomputed for the new config object
   delete newCfg._scaledPath;
   
-  // Update template config array to keep it in sync for proper export/state mgmt
   tmpl.frames.push(newCfg);
 
   const newIdx = state.cells.length;
   const newCell = createCell(state, tmpl, newCfg, newIdx);
   state.cells.push(newCell);
 
-  // If the source had an image loaded, copy it into the clone via an
-  // independent blob URL.  We draw the source onto an offscreen canvas and
-  // call toBlob() so the clone owns its own URL – revoking the original's
-  // blob (on delete) won't affect the clone.
   if (src.loaded && src.img.naturalWidth > 0) {
-    // Snapshot transform values *now* so they survive even if src is deleted
-    // before the async blob callback fires.
     const snapScale = src.scale;
     const snapPosX  = src.posX;
     const snapPosY  = src.posY;
@@ -2345,11 +2374,8 @@ function duplicateCell(sourceIdx, newX, newY) {
     }, 'image/png');
   }
 
-  // Add to the DOM
   canvasArea.appendChild(newCell.el);
   canvasArea.appendChild(newCell.controlsEl);
-
-  // Update the global cells reference
   cells = state.cells;
 
   return newIdx;
@@ -2359,25 +2385,21 @@ function createTemplateState(tmpl) {
   const state = {
     cells: [],
     selectedIndices: new Set(),
-    textBoxes: [],       // Text box objects for this template
+    textBoxes: [],       
     bgImg: new Image(),
     bgLoaded: false,
-    // Background transform state (like an image inside a "canvas-sized frame")
     bgScale: 1,
     bgPosX: 0,
     bgPosY: 0,
     bgNaturalW: 0,
     bgNaturalH: 0,
-    // The actual DOM img element rendered inside the canvas
     bgEl: null,
   };
 
-  // Create the bg img element for the canvas
   const bgEl = document.createElement('img');
   bgEl.className = 'canvas-bg-img';
   state.bgEl = bgEl;
 
-  // Background image
   state.bgImg.crossOrigin = 'anonymous';
   state.bgImg.onload = () => {
     state.bgLoaded = true;
@@ -2385,7 +2407,6 @@ function createTemplateState(tmpl) {
     state.bgNaturalH = state.bgImg.naturalHeight;
     calculateDefaultBgTransform(state, tmpl);
     bgEl.src = state.bgImg.src;
-    // If this template is currently active, apply the background
     if (TEMPLATES[activeTemplateIndex] === tmpl) {
       bgLoaded = true;
       applyBgTransform(state);
@@ -2401,7 +2422,6 @@ function createTemplateState(tmpl) {
     state.bgImg.src = tmpl.bgImage;
   }
 
-  // Build cells
   tmpl.frames.forEach((cfg, i) => {
     const cellState = createCell(state, tmpl, cfg, i);
     state.cells.push(cellState);
@@ -2410,7 +2430,6 @@ function createTemplateState(tmpl) {
   return state;
 }
 
-// ===================== BACKGROUND TRANSFORM HELPERS =====================
 function calculateDefaultBgTransform(state, tmpl) {
   if (!state.bgLoaded) return;
   const cw = tmpl ? tmpl.canvasW : CANVAS_W;
@@ -2443,21 +2462,17 @@ function clampBgPosition(state) {
   }
 }
 
-// ===================== FRAME SHAPE UPDATE HELPER =====================
 function updateFrameShape(cellState) {
   const cfg = cellState.cfg;
-  // Clear cached scaled path so it gets recomputed
   delete cfg._scaledPath;
   const sp = getScaledPath(cfg);
 
   if (sp) {
     cellState.el.style.clipPath = `path('${sp}')`;
-    // Update the shape outline SVG if present
     const outlineEl = cellState.el.querySelector('.shape-outline');
     if (outlineEl) {
       outlineEl.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="outline-path" d="${sp}"/></svg>`;
     }
-    // Update user border SVG path if present
     if (cellState.userBorderSvgEl) {
       cellState.userBorderSvgEl.innerHTML = `<svg viewBox="0 0 ${cfg.w} ${cfg.h}"><path class="user-border-path" d="${sp}"/></svg>`;
       applyUserBorder(cellState);
@@ -2465,22 +2480,18 @@ function updateFrameShape(cellState) {
   }
 }
 
-// Apply user-set border to a frame (both rect and shaped)
-// Apply user-set border to a frame (both rect and shaped)
 function applyUserBorder(s) {
   if (s.borderEnabled && s.borderWidth > 0) {
     const color = s.borderColor;
     const width = s.borderWidth;
     if (s.cfg.shape && s.userBorderSvgEl) {
-      // Shaped: apply via SVG style properties to override CSS
       s.userBorderEl.style.border = 'none';
       const pathEl = s.userBorderSvgEl.querySelector('.user-border-path');
       if (pathEl) {
         pathEl.style.stroke = color;
-        pathEl.style.strokeWidth = (width * 2) + 'px'; // *2 because half is clipped outside
+        pathEl.style.strokeWidth = (width * 2) + 'px'; 
       }
     } else {
-      // Rectangular: apply via CSS border
       s.userBorderEl.style.border = `${width}px solid ${color}`;
     }
   } else {
@@ -2495,7 +2506,6 @@ function applyUserBorder(s) {
   }
 }
 
-// ===================== STATE-AWARE HELPERS =====================
 function selectCellFor(state, i) {
   deselectAll();
   state.selectedIndices.add(i);
@@ -2533,7 +2543,6 @@ function deselectAll() {
   syncFormatUIToSelection();
 }
 
-// Sync a single frame's controls overlay position/size with its cell cfg
 function syncFrameControls(cellState) {
   const cfg = cellState.cfg;
   const c = cellState.controlsEl;
@@ -2543,7 +2552,6 @@ function syncFrameControls(cellState) {
   c.style.height = cfg.h + 'px';
 }
 
-// Sync controls for ALL currently selected frames
 function syncAllSelectedControls() {
   selectedIndices.forEach(idx => {
     if (cells[idx]) syncFrameControls(cells[idx]);
@@ -2604,10 +2612,7 @@ function clampPosition(s) {
 }
 
 function loadFileIntoCellState(file, cellState, state, i) {
-  if (cellState.img.src && cellState.img.src.startsWith('blob:')) {
-    URL.revokeObjectURL(cellState.img.src);
-  }
-
+  // Deliberately bypassed URL revocation for robust un-delete and un-swap features
   const url = URL.createObjectURL(file);
   cellState.img.onload = () => {
     cellState.naturalW = cellState.img.naturalWidth;
@@ -2622,6 +2627,7 @@ function loadFileIntoCellState(file, cellState, state, i) {
 }
 
 function performSwap(idxA, idxB) {
+  saveState();
   const a = cells[idxA];
   const b = cells[idxB];
 
@@ -2658,13 +2664,10 @@ function performSwap(idxA, idxB) {
   applyTransform(idxB);
 }
 
-// ===================== DESELECT / MARQUEE SELECT ON CANVAS =====================
-// Clicking/dragging on the canvas background (not on a cell or text box) starts marquee selection
 canvasArea.addEventListener('mousedown', (e) => {
   if (e.target.closest('.cell')) return;
   if (e.target.closest('.text-box')) return;
-  if (textPlaceMode) return; // text placement handler handles this
-  // Don't start marquee if bg is unlocked and we're about to bg-drag
+  if (textPlaceMode) return; 
   if (!lockBgToggle.checked) return;
 
   deselectAll();
@@ -2685,69 +2688,44 @@ canvasArea.addEventListener('mousedown', (e) => {
   e.preventDefault();
 });
 
-// Global mousedown handles deselecting when clicking anywhere else
 document.addEventListener('mousedown', (e) => {
-  // If clicking inside a cell, cell logic handles the event
   if (e.target.closest('.cell')) return;
-  
-  // If clicking inside a text box, text box logic handles the event
   if (e.target.closest('.text-box')) return;
-
-  // If clicking canvas area, canvas logic handles deselect and marquee dragging
   if (e.target.closest('.canvas-area')) return;
-
-  // Prevent deselect when interacting with UI buttons, file inputs, or toggles
   if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.lock-toggle')) return;
-
-  // Prevent deselect when switching tabs
   if (e.target.closest('.tab-btn')) return;
-
-  // Prevent deselect when interacting with right sidebar
   if (e.target.closest('.right-sidebar')) return;
-
-  // Otherwise, click was on the outer app wrapper (sidebar background, topbar space, general hints), so deselect
   deselectAll();
 });
 
-// Fix: Force blur active inputs when interacting with the canvas
 document.addEventListener('mousedown', (e) => {
   const activeEl = document.activeElement;
-  
-  // Check if an input or textarea currently has focus
   if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-    
-    // If the new click is NOT on another UI control (input/button/etc)
     if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON') {
-      activeEl.blur(); // Manually remove focus from the color box
+      activeEl.blur(); 
     }
-    
   }
-}, true); // 'true' runs this in the capture phase, guaranteeing it fires BEFORE any e.preventDefault()
+}, true); 
 
-// ===================== DELETE KEY HANDLER =====================
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    // Don't intercept if user is typing in an input or contentEditable
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.target.contentEditable === 'true') return;
 
     if (selectedIndices.size === 0) return;
+    saveState();
+    
     const state = templateStates[activeTemplateIndex];
     const tmpl = TEMPLATES[activeTemplateIndex];
-
     const selected = [...selectedIndices].filter(idx => cells[idx]);
     if (selected.length === 0) return;
 
     e.preventDefault();
 
-    // Phase 1: If any selected frame has an image, clear the image but keep the frame
     const loadedFrames = selected.filter(idx => cells[idx].loaded);
     if (loadedFrames.length > 0) {
       loadedFrames.forEach(idx => {
         const s = cells[idx];
-        if (s.img.src && s.img.src.startsWith('blob:')) {
-          URL.revokeObjectURL(s.img.src);
-        }
         s.img.src = '';
         s.loaded = false;
         s.naturalW = 0;
@@ -2762,8 +2740,6 @@ window.addEventListener('keydown', (e) => {
       return;
     }
 
-    // Phase 2: All selected frames are empty — delete them
-    // Sort descending so splicing doesn't shift indices of items still to delete
     selected.sort((a, b) => b - a);
 
     selected.forEach(cellIdx => {
@@ -2771,22 +2747,17 @@ window.addEventListener('keydown', (e) => {
       s.el.remove();
       s.controlsEl.remove();
       state.cells.splice(cellIdx, 1);
-      tmpl.frames.splice(cellIdx, 1); // Keep template config in sync for accurate export
+      tmpl.frames.splice(cellIdx, 1); 
     });
 
     cells = state.cells;
-
-    // Re-index remaining cell elements
     reIndexCells(state);
-
-    // Clear selection
     state.selectedIndices.clear();
     selectedIndices = state.selectedIndices;
     updateLabel();
   }
 });
 
-// ===================== GLOBAL MOUSE / KEYBOARD HANDLERS =====================
 window.addEventListener('mousemove', (e) => {
   if (swapping && swapSourceIdx >= 0) {
     const hoveredEl = document.elementFromPoint(e.clientX, e.clientY);
@@ -2805,8 +2776,8 @@ window.addEventListener('mousemove', (e) => {
     }
   }
 
-  // Shift+drag: image panning inside frames only (no text box movement)
   if (dragging && dragCellIdx >= 0 && !swapping && multiDragStartPositions) {
+    if (!hasSavedForThisDrag) { saveState(); hasSavedForThisDrag = true; }
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
     multiDragStartPositions.forEach((start, idx) => {
@@ -2818,12 +2789,11 @@ window.addEventListener('mousemove', (e) => {
     });
   }
 
-  // Default drag: reposition all selected frames AND text boxes
   if (frameDragging && frameDragIdx >= 0 && multiFrameDragStartPositions) {
+    if (!hasSavedForThisDrag) { saveState(); hasSavedForThisDrag = true; }
     let rawDx = e.clientX - frameDragStartX;
     let rawDy = e.clientY - frameDragStartY;
 
-    // Axis-lock: determine axis on first meaningful move, then zero the other
     if (axisLockActive) {
       if (axisLockAxis === null && (Math.abs(rawDx) > 3 || Math.abs(rawDy) > 3)) {
         axisLockAxis = Math.abs(rawDx) >= Math.abs(rawDy) ? 'h' : 'v';
@@ -2838,26 +2808,23 @@ window.addEventListener('mousemove', (e) => {
     applyDragPositions(dx, dy, multiFrameDragStartPositions, multiTextDragStartPositions);
   }
 
-  // Duplicate-drag (Ctrl+drag): create clones on first move, then reposition them
   if (duplicating) {
     const dx = e.clientX - dupDragStartX;
     const dy = e.clientY - dupDragStartY;
 
-    // Create clones lazily on first meaningful move (>3px)
     if (dupCloneIndices.length === 0 && dupTextBoxCloneIds.length === 0 && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+      saveState(); 
       dupCloneToStartPos.clear();
       
-      // Clone selected frames
       dupStartPositions.forEach((pos, srcIdx) => {
          const cloneIdx = duplicateCell(srcIdx, pos.x, pos.y);
          if (cloneIdx >= 0) {
             dupCloneIndices.push(cloneIdx);
             dupCloneToStartPos.set(cloneIdx, pos);
-            cells[srcIdx].el.style.opacity = '0.4'; // Dim source indicator
+            cells[srcIdx].el.style.opacity = '0.4'; 
          }
       });
 
-      // Clone selected text boxes
       dupTextBoxCloneStartPos.clear();
       dupTextBoxSources.forEach(srcId => {
         const src = getTextBoxById(srcId);
@@ -2865,10 +2832,9 @@ window.addEventListener('mousemove', (e) => {
         const clone = cloneTextBox(src);
         dupTextBoxCloneIds.push(clone.id);
         dupTextBoxCloneStartPos.set(clone.id, { x: src.x, y: src.y });
-        src.el.style.opacity = '0.4'; // Dim source
+        src.el.style.opacity = '0.4'; 
       });
       
-      // Select all clones (frames + text boxes)
       deselectAll();
       const state = templateStates[activeTemplateIndex];
       dupCloneIndices.forEach(cloneIdx => {
@@ -2884,7 +2850,6 @@ window.addEventListener('mousemove', (e) => {
       syncFormatUIToSelection();
     }
 
-    // Move the clones (frames + text boxes) with alignment snapping
     if (dupCloneIndices.length > 0 || dupTextBoxCloneIds.length > 0) {
       const dragFrameSet = new Set(dupCloneIndices);
       const dragTextSet = new Set(dupTextBoxCloneIds);
@@ -2893,20 +2858,18 @@ window.addEventListener('mousemove', (e) => {
     }
   }
 
-  // Frame stretching (edge/corner drag to change frame dimensions)
   if (frameStretching && frameStretchStartStates) {
+    if (!hasSavedForThisDrag) { saveState(); hasSavedForThisDrag = true; }
     const rawDx = e.clientX - frameStretchStartX;
     const rawDy = e.clientY - frameStretchStartY;
     const side = frameStretchSide;
 
-    // Compute snapped dx/dy with edge alignment
     const shiftConstrain = e.shiftKey;
-    const altConstrain = e.altKey && !e.shiftKey; // shift takes precedence
+    const altConstrain = e.altKey && !e.shiftKey; 
     const excludeFrames = new Set(frameStretchStartStates.keys());
     const excludeText = frameStretchStartTextStates ? new Set(frameStretchStartTextStates.keys()) : new Set();
     const { dx, dy } = applyStretchAlignmentSnap(rawDx, rawDy, side, frameStretchStartStates, frameStretchStartTextStates, excludeFrames, excludeText, shiftConstrain, altConstrain);
 
-    // Apply stretch to all selected frames
     frameStretchStartStates.forEach((start, idx) => {
       const s = cells[idx];
       if (!s) return;
@@ -2914,7 +2877,6 @@ window.addEventListener('mousemove', (e) => {
 
       let newX = start.x, newY = start.y, newW = start.w, newH = start.h;
 
-      // Compute new dimensions based on which handle is being dragged
       if (side === 'r') { newW = start.w + dx; }
       else if (side === 'l') { newW = start.w - dx; newX = start.x + dx; }
       else if (side === 'b') { newH = start.h + dy; }
@@ -2924,26 +2886,18 @@ window.addEventListener('mousemove', (e) => {
       else if (side === 'tr') { newW = start.w + dx; newH = start.h - dy; newY = start.y + dy; }
       else if (side === 'tl') { newW = start.w - dx; newH = start.h - dy; newX = start.x + dx; newY = start.y + dy; }
 
-      // Enforce minimum size
       if (newW < 30) { newW = 30; if (side.includes('l')) newX = start.x + start.w - 30; }
       if (newH < 30) { newH = 30; if (side.includes('t')) newY = start.y + start.h - 30; }
 
-      // Shift held: force square proportions (w = h)
-      // Alt held: preserve original aspect ratio
-      // OR soft snap: if w ≈ h within threshold, snap to square
       const softSnap = !shiftConstrain && !altConstrain &&
         (Math.abs(newW - newH) < ALIGNMENT_STRETCH_TO_SQUARE_CLICK_PIXELS && newW >= 30 && newH >= 30);
 
       if (shiftConstrain) {
-        // Shift held: the actively-stretched dimension drives, the other follows
         if (side === 'l' || side === 'r') {
-          // Stretching horizontally: height follows width
           newH = newW;
         } else if (side === 't' || side === 'b') {
-          // Stretching vertically: width follows height
           newW = newH;
         } else {
-          // Corner handle: use the larger dimension
           const target = Math.max(newW, newH);
           if (newW < target) {
             const diff = target - newW;
@@ -2957,16 +2911,12 @@ window.addEventListener('mousemove', (e) => {
           }
         }
       } else if (altConstrain) {
-        // Alt held: preserve original aspect ratio
         const aspect = start.w / start.h;
         if (side === 'l' || side === 'r') {
-          // Width drives; height follows aspect ratio
           newH = newW / aspect;
         } else if (side === 't' || side === 'b') {
-          // Height drives; width follows aspect ratio
           newW = newH * aspect;
         } else {
-          // Corner: scale uniformly by the dimension that grew more
           const ratioW = newW / start.w;
           const ratioH = newH / start.h;
           const ratio = Math.max(ratioW, ratioH);
@@ -2977,7 +2927,6 @@ window.addEventListener('mousemove', (e) => {
           if (side.includes('t')) newY -= (newH - prevH);
         }
       } else if (softSnap) {
-        // Soft snap: the actively-stretched dimension snaps back to match the other
         if (side === 'l' || side === 'r') {
           const diff = newH - newW;
           newW = newH;
@@ -3001,7 +2950,6 @@ window.addEventListener('mousemove', (e) => {
         }
       }
 
-      // Clamp to canvas
       newX = Math.max(0, newX);
       newY = Math.max(0, newY);
       if (newX + newW > CANVAS_W) newW = CANVAS_W - newX;
@@ -3016,7 +2964,6 @@ window.addEventListener('mousemove', (e) => {
       updateFrameShape(s);
       syncFrameControls(s);
 
-      // Scale image proportionally: use the larger scale factor to ensure coverage
       if (s.loaded) {
         const scaleRatioW = newW / start.w;
         const scaleRatioH = newH / start.h;
@@ -3028,7 +2975,6 @@ window.addEventListener('mousemove', (e) => {
       }
     });
 
-    // Apply stretch to all selected text boxes (horizontal width only)
     if (frameStretchStartTextStates) {
       frameStretchStartTextStates.forEach((start, tbId) => {
         const tb = getTextBoxById(tbId);
@@ -3050,15 +2996,14 @@ window.addEventListener('mousemove', (e) => {
     updateLabel();
   }
 
-  // Background dragging (when unlocked)
   if (bgDragging) {
+    if (!hasSavedForThisDrag) { saveState(); hasSavedForThisDrag = true; }
     const state = templateStates[activeTemplateIndex];
     state.bgPosX = bgDragStartPosX + (e.clientX - bgDragStartX);
     state.bgPosY = bgDragStartPosY + (e.clientY - bgDragStartY);
     applyBgTransform(state);
   }
 
-  // Marquee selection drawing
   if (marqueeActive && marqueeEl) {
     const rect = canvasArea.getBoundingClientRect();
     const curX = e.clientX - rect.left;
@@ -3076,6 +3021,7 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   hideGuides();
+  hasSavedForThisDrag = false; 
 
   if (swapping && swapSourceIdx >= 0) {
     if (swapTargetIdx >= 0 && swapTargetIdx !== swapSourceIdx && cells[swapTargetIdx].loaded) {
@@ -3100,10 +3046,8 @@ window.addEventListener('mouseup', (e) => {
   multiFrameDragStartPositions = null;
   axisLockActive = false; axisLockAxis = null;
 
-  // Finalize duplicate-drag OR ctrl+click multi-select
   if (duplicating) {
     if (dupCloneIndices.length > 0 || dupTextBoxCloneIds.length > 0) {
-      // Clones were created (drag happened) — clean up temporary states
       dupStartPositions.forEach((_, srcIdx) => {
          if (cells[srcIdx]) {
             cells[srcIdx].el.style.opacity = '';
@@ -3115,25 +3059,20 @@ window.addEventListener('mouseup', (e) => {
             cells[cloneIdx].el.classList.remove('dragging');
          }
       });
-      // Clean up text box source dimming
       dupTextBoxSources.forEach(srcId => {
         const src = getTextBoxById(srcId);
         if (src) src.el.style.opacity = '';
       });
     } else {
-      // No clone was created — this was a ctrl+click (no drag).
-      // Toggle the clicked frame in/out of the multi-selection.
       if (dupSourceIdx >= 0) {
         const state = templateStates[activeTemplateIndex];
         if (selectedIndices.has(dupSourceIdx)) {
-          // Already selected → deselect it
           selectedIndices.delete(dupSourceIdx);
           if (cells[dupSourceIdx]) {
             cells[dupSourceIdx].el.classList.remove('selected');
             cells[dupSourceIdx].controlsEl.classList.remove('visible');
           }
         } else {
-          // Not selected → add to selection
           selectedIndices.add(dupSourceIdx);
           if (cells[dupSourceIdx]) {
             cells[dupSourceIdx].el.classList.add('selected');
@@ -3165,7 +3104,6 @@ window.addEventListener('mouseup', (e) => {
     frameStretchStartTextStates = null;
   }
 
-  // Finalize marquee selection
   if (marqueeActive && marqueeEl) {
     const mLeft = parseFloat(marqueeEl.style.left) || 0;
     const mTop = parseFloat(marqueeEl.style.top) || 0;
@@ -3178,20 +3116,17 @@ window.addEventListener('mouseup', (e) => {
     marqueeEl = null;
     marqueeActive = false;
 
-    // Only select if the marquee has meaningful size (>4px drag)
     if (mW > 4 || mH > 4) {
       const state = templateStates[activeTemplateIndex];
       const hitIndices = [];
       cells.forEach((s, idx) => {
         const cfg = s.cfg;
-        // Frame is fully contained within the marquee box
         if (cfg.x >= mLeft && cfg.y >= mTop &&
             cfg.x + cfg.w <= mRight && cfg.y + cfg.h <= mBottom) {
           hitIndices.push(idx);
         }
       });
 
-      // Also select text boxes within the marquee
       const hitTextBoxes = [];
       if (state.textBoxes) {
         state.textBoxes.forEach(tb => {
@@ -3225,7 +3160,6 @@ window.addEventListener('mouseup', (e) => {
   }
 });
 
-// ===================== BULK UPLOAD HANDLERS =====================
 const bulkUploadBtn = document.getElementById('bulkUploadBtn');
 const bulkFileInput = document.getElementById('bulkFileInput');
 
@@ -3236,11 +3170,11 @@ bulkUploadBtn.addEventListener('click', () => {
 bulkFileInput.addEventListener('change', (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
+  saveState();
 
   const state = templateStates[activeTemplateIndex];
   let fileIdx = 0;
 
-  // Phase 1: fill empty frames
   for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
     if (!cells[i].loaded) {
       loadFileIntoCellState(files[fileIdx], cells[i], state, i);
@@ -3248,7 +3182,6 @@ bulkFileInput.addEventListener('change', (e) => {
     }
   }
 
-  // Phase 2: overwrite existing frames
   if (fileIdx < files.length) {
     for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
       if (cells[i].loaded) {
@@ -3261,9 +3194,9 @@ bulkFileInput.addEventListener('change', (e) => {
   e.target.value = '';
 });
 
-// ===================== RESET BUTTONS =====================
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (selectedIndices.size === 0) return;
+  saveState();
   selectedIndices.forEach(idx => {
     const s = cells[idx];
     if (!s.loaded) return;
@@ -3273,6 +3206,7 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 });
 
 document.getElementById('resetAllBtn').addEventListener('click', () => {
+  saveState();
   cells.forEach((s, i) => {
     if (!s.loaded) return;
     calculateDefaultTransform(s);
@@ -3280,7 +3214,6 @@ document.getElementById('resetAllBtn').addEventListener('click', () => {
   });
 });
 
-// ===================== BACKGROUND CHANGE & LOCK HANDLERS =====================
 const changeBgBtn = document.getElementById('changeBgBtn');
 const bgFileInput = document.getElementById('bgFileInput');
 const lockBgToggle = document.getElementById('lockBgToggle');
@@ -3292,14 +3225,10 @@ changeBgBtn.addEventListener('click', () => {
 bgFileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  saveState();
 
   const state = templateStates[activeTemplateIndex];
   const url = URL.createObjectURL(file);
-
-  // Revoke old blob URL if any
-  if (state.bgEl.src && state.bgEl.src.startsWith('blob:')) {
-    URL.revokeObjectURL(state.bgEl.src);
-  }
 
   const newImg = new Image();
   newImg.onload = () => {
@@ -3325,10 +3254,8 @@ lockBgToggle.addEventListener('change', () => {
   updateBgLockUI();
 });
 
-// Canvas-level mousedown for background panning (only when unlocked)
 canvasArea.addEventListener('mousedown', (e) => {
   if (lockBgToggle.checked) return;
-  // Only start bg drag if clicking directly on canvasArea or the bg image, not on a cell or text box
   if (e.target.closest('.cell')) return;
   if (e.target.closest('.text-box')) return;
 
@@ -3346,16 +3273,15 @@ canvasArea.addEventListener('mousedown', (e) => {
   canvasArea.classList.add('bg-dragging');
 });
 
-// Canvas-level wheel for background zooming (only when unlocked)
 canvasArea.addEventListener('wheel', (e) => {
   if (lockBgToggle.checked) return;
-  // Only zoom bg if scrolling on canvas itself, not on a cell or text box
   if (e.target.closest('.cell')) return;
   if (e.target.closest('.text-box')) return;
 
   const state = templateStates[activeTemplateIndex];
   if (!state.bgLoaded) return;
 
+  handleScrollStart();
   e.preventDefault();
 
   const rect = canvasArea.getBoundingClientRect();
@@ -3364,15 +3290,11 @@ canvasArea.addEventListener('wheel', (e) => {
   const oldScale = state.bgScale;
   const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
   state.bgScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, state.bgScale + delta));
-  // Zoom toward cursor
   state.bgPosX = mx - (mx - state.bgPosX) * (state.bgScale / oldScale);
   state.bgPosY = my - (my - state.bgPosY) * (state.bgScale / oldScale);
   applyBgTransform(state);
 }, { passive: false });
 
-// Add bg dragging to the global mousemove
-
-// ===================== EXPORT ENGINE =====================
 function getBgDrawParams() {
   const state = templateStates[activeTemplateIndex];
   if (!state.bgLoaded) return null;
@@ -3438,20 +3360,16 @@ function generateCanvasBlob(includeBackground) {
         }
         ctx.restore();
 
-        // Draw user border (after restore, so it's not clipped for rect frames;
-        // for shaped frames we draw inside a clip)
         if (s.borderEnabled && s.borderWidth > 0) {
           ctx.save();
           ctx.translate(cfg.x, cfg.y);
           ctx.strokeStyle = s.borderColor;
           ctx.lineWidth = s.borderWidth;
           if (sp) {
-            // Shaped: stroke inside the shape path
-            ctx.lineWidth = s.borderWidth * 2; // half will be outside, clipped
+            ctx.lineWidth = s.borderWidth * 2; 
             ctx.clip(new Path2D(sp));
             ctx.stroke(new Path2D(sp));
           } else {
-            // Rectangular: inset border
             const hw = s.borderWidth / 2;
             ctx.strokeRect(hw, hw, cfg.w - s.borderWidth, cfg.h - s.borderWidth);
           }
@@ -3459,7 +3377,6 @@ function generateCanvasBlob(includeBackground) {
         }
       });
 
-      // ---- Draw text boxes on top ----
       const state = templateStates[activeTemplateIndex];
       if (state.textBoxes) {
         state.textBoxes.forEach(tb => {
@@ -3477,15 +3394,6 @@ function generateCanvasBlob(includeBackground) {
   });
 }
 
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║                                                                        ║
-// ║   TEXT BOX SYSTEM                                                      ║
-// ║                                                                        ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-
-// ===================== FONT REGISTRY =====================
-// To add a new font: 1) Add it to the Google Fonts @import in <style>
-//                    2) Push { name, family } into this array. That's it.
 const TEXT_FONTS = [
   { name: 'DM Sans',             family: "'DM Sans', sans-serif" },
   { name: 'Playfair Display',    family: "'Playfair Display', serif" },
@@ -3509,29 +3417,16 @@ const TEXT_FONTS = [
 
 const TEXT_FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96, 128];
 
-// ===================== COLOR PALETTE =====================
-// To change the default color theme: replace this array.
-// Each entry is a hex string. The UI renders them as a swatch grid.
 const DEFAULT_COLOR_PALETTE = [
-  // Row 1: grayscale
   '#000000', '#333333', '#666666', '#999999', '#cccccc', '#ffffff',
-  // Row 2: warm
   '#ff0000', '#ff4d4d', '#ff69b4', '#dda0dd', '#9370db', '#4b0082',
-  // Row 3: cool
   '#008b8b', '#20b2aa', '#00bfff', '#1e90ff', '#00008b', '#000080',
-  // Row 4: nature
   '#00c853', '#76ff03', '#ffd600', '#ffab40', '#ff6d00', '#ff3d00',
-  // Row 5: pastels
   '#ffcdd2', '#f8bbd0', '#e1bee7', '#c5cae9', '#b2dfdb', '#c8e6c9',
 ];
 
-// ===================== TEXT BOX STATE =====================
-// Each text box: { id, x, y, width, text, fontFamily, fontSize, fontColor,
-//                  bold, italic, underline, align, el, contentEl }
-// width: null = auto-expand; number = fixed width (after user resizes)
-
-let textPlaceMode = false;       // T tool active
-let activeTextBoxId = null;      // currently-editing text box id
+let textPlaceMode = false;       
+let activeTextBoxId = null;      
 let textBoxDragging = false;
 let textBoxDragId = null;
 let textBoxDragStartX = 0, textBoxDragStartY = 0;
@@ -3543,15 +3438,13 @@ let textBoxResizeStartX = 0;
 let textBoxResizeStartW = 0;
 let textBoxResizeStartXPos = 0;
 
-// Deferred ctrl+click state: pending until we know if it's a click (toggle-select) or drag (duplicate)
 let textBoxDupPending = false;
 let textBoxDupSourceId = null;
 let textBoxDupDragStartX = 0;
 let textBoxDupDragStartY = 0;
 let textBoxDupCloneId = null;
 
-// Multi-drag for text boxes when part of selection
-let multiTextDragStartPositions = null; // Map of tbId -> {x, y}
+let multiTextDragStartPositions = null; 
 
 let nextTextBoxId = 1;
 
@@ -3566,7 +3459,6 @@ function getTextBoxById(id) {
   return getTextBoxes().find(tb => tb.id === id) || null;
 }
 
-// ===================== TEXT BOX CREATION =====================
 function createTextBox(x, y) {
   const state = templateStates[activeTemplateIndex];
   if (!state.textBoxes) state.textBoxes = [];
@@ -3576,7 +3468,7 @@ function createTextBox(x, y) {
     id,
     x,
     y,
-    width: null,  // auto-expand initially
+    width: null,  
     text: '',
     fontFamily: TEXT_FONTS[0].family,
     fontName: TEXT_FONTS[0].name,
@@ -3590,7 +3482,6 @@ function createTextBox(x, y) {
     contentEl: null,
   };
 
-  // Build DOM
   const el = document.createElement('div');
   el.className = 'text-box editing';
   el.dataset.tbid = id;
@@ -3611,7 +3502,6 @@ function createTextBox(x, y) {
   content.style.textAlign = tb.align;
   el.appendChild(content);
 
-  // Resize handles
   ['l', 'r', 't', 'b'].forEach(side => {
     const h = document.createElement('div');
     h.className = `text-handle th-${side}`;
@@ -3625,10 +3515,8 @@ function createTextBox(x, y) {
 
   canvasArea.appendChild(el);
 
-  // Attach all interaction event handlers
   attachTextBoxEvents(tb);
 
-  // Focus it for immediate editing
   activeTextBoxId = id;
   content.focus();
 
@@ -3636,44 +3524,80 @@ function createTextBox(x, y) {
   return tb;
 }
 
-// Attach all interaction events to a text box (used by both createTextBox and cloneTextBox)
+function restoreTextBox(snap, state) {
+  const id = snap.id;
+  if (snap.id && parseInt(snap.id.replace('tb_','')) >= nextTextBoxId) {
+      nextTextBoxId = parseInt(snap.id.replace('tb_','')) + 1;
+  }
+  const tb = { ...snap, el: null, contentEl: null };
+  const el = document.createElement('div');
+  el.className = 'text-box';
+  el.dataset.tbid = id;
+  el.style.left = tb.x + 'px';
+  el.style.top = tb.y + 'px';
+
+  const border = document.createElement('div');
+  border.className = 'text-border';
+  el.appendChild(border);
+
+  const content = document.createElement('div');
+  content.className = 'text-content';
+  content.contentEditable = 'false';
+  content.spellcheck = false;
+  content.innerHTML = tb.text;
+  content.style.fontFamily = tb.fontFamily;
+  content.style.fontSize = tb.fontSize + 'px';
+  content.style.color = tb.fontColor;
+  content.style.fontWeight = tb.bold ? 'bold' : 'normal';
+  content.style.fontStyle = tb.italic ? 'italic' : 'normal';
+  content.style.textDecoration = tb.underline ? 'underline' : 'none';
+  content.style.textAlign = tb.align;
+  if (tb.width) content.style.width = tb.width + 'px';
+  el.appendChild(content);
+
+  ['l', 'r', 't', 'b'].forEach(side => {
+    const h = document.createElement('div');
+    h.className = `text-handle th-${side}`;
+    h.dataset.thside = side;
+    el.appendChild(h);
+  });
+
+  tb.el = el;
+  tb.contentEl = content;
+  state.textBoxes.push(tb);
+  canvasArea.appendChild(el);
+  attachTextBoxEvents(tb);
+}
+
 function attachTextBoxEvents(tb) {
   const el = tb.el;
   const content = tb.contentEl;
   const id = tb.id;
 
-  // Event: prevent mousedown on content from propagating when editing
   content.addEventListener('mousedown', (e) => {
     if (el.classList.contains('editing')) {
       e.stopPropagation();
     }
   });
 
-  // Event: input — sync text back to state
   content.addEventListener('input', () => {
     tb.text = content.innerHTML;
   });
 
-  // Event: blur — finalize text box
   content.addEventListener('blur', () => {
-    // Delay so we can check if focus went to a sibling UI element
     setTimeout(() => {
       if (document.activeElement && document.activeElement.closest('.right-sidebar')) {
-        // User clicked a format control — don't finalize, but clear browser selection highlight
-        // so the blue highlight doesn't linger visually on the text
         return;
       }
       finalizeTextBox(id);
     }, 100);
   });
 
-  // Event: mousedown on the text-box wrapper (for dragging, selecting, resize handles)
   el.addEventListener('mousedown', (e) => {
-    if (el.classList.contains('editing')) return; // let content handle it
+    if (el.classList.contains('editing')) return; 
 
     const handleEl = e.target.closest('.text-handle');
     if (handleEl) {
-      // Start resize
       e.preventDefault();
       e.stopPropagation();
       textBoxResizing = true;
@@ -3685,7 +3609,6 @@ function attachTextBoxEvents(tb) {
       return;
     }
 
-    // Ctrl+Shift+click: axis-locked drag (horizontal or vertical only)
     if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -3717,8 +3640,6 @@ function attachTextBoxEvents(tb) {
       return;
     }
 
-    // Ctrl+click: enter pending state — duplicate on drag, toggle-select on click
-    // (mirrors the frame duplicate/multi-select pattern)
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -3734,13 +3655,11 @@ function attachTextBoxEvents(tb) {
     e.preventDefault();
     e.stopPropagation();
 
-    // Select this text box (single-select if not already selected)
     if (!selectedTextBoxIds.has(id)) {
       deselectAll();
       selectTextBox(id);
     }
 
-    // Start drag
     textBoxDragging = true;
     textBoxDragId = id;
     textBoxDragStartX = e.clientX;
@@ -3748,49 +3667,42 @@ function attachTextBoxEvents(tb) {
     textBoxDragStartPosX = tb.x;
     textBoxDragStartPosY = tb.y;
 
-    // Multi-drag: store start positions for all selected text boxes
     multiTextDragStartPositions = new Map();
     selectedTextBoxIds.forEach(tbId => {
       const t = getTextBoxById(tbId);
       if (t) multiTextDragStartPositions.set(tbId, { x: t.x, y: t.y });
     });
-    // Also capture selected frames for unified drag
     multiFrameDragStartPositions = new Map();
     selectedIndices.forEach(idx => {
       const s = cells[idx];
-      if (s) { // No longer requiring s.loaded, empty frames can move too
+      if (s) { 
         multiFrameDragStartPositions.set(idx, { x: s.cfg.x, y: s.cfg.y });
       }
     });
   });
 
-  // Double-click to re-enter editing
   el.addEventListener('dblclick', (e) => {
     if (el.classList.contains('editing')) return;
     e.preventDefault();
     e.stopPropagation();
-    // Deselect all other objects (frames and text boxes), keep only this text box
     deselectAllTextBoxes();
-    // Also deselect all frames
     selectedIndices.forEach(idx => {
       cells[idx].el.classList.remove('selected');
     });
     selectedIndices.clear();
     updateLabel();
-    // Select this text box and enter editing with cursor at click position
     selectTextBox(id);
     enterTextEditing(id, e);
   });
 
-  // Scroll to resize font (when selected but not editing)
   el.addEventListener('wheel', (e) => {
     if (el.classList.contains('editing')) return;
+    handleScrollStart();
     e.preventDefault();
     e.stopPropagation();
 
     const delta = e.deltaY > 0 ? -1 : 1;
 
-    // Apply to all selected text boxes
     selectedTextBoxIds.forEach(tbId => {
       const t = getTextBoxById(tbId);
       if (!t) return;
@@ -3801,7 +3713,6 @@ function attachTextBoxEvents(tb) {
   }, { passive: false });
 }
 
-// ===================== TEXT BOX SELECTION =====================
 let selectedTextBoxIds = new Set();
 
 function selectTextBox(id) {
@@ -3831,7 +3742,6 @@ function deselectAllTextBoxes() {
   activeTextBoxId = null;
 }
 
-// Augment deselectAll to also clear text box selection
 const _origDeselectAll = deselectAll;
 deselectAll = function() {
   _origDeselectAll();
@@ -3839,6 +3749,7 @@ deselectAll = function() {
 };
 
 function enterTextEditing(id, mouseEvent) {
+  saveState();
   const tb = getTextBoxById(id);
   if (!tb) return;
   activeTextBoxId = id;
@@ -3847,7 +3758,6 @@ function enterTextEditing(id, mouseEvent) {
   tb.contentEl.focus();
 
   if (mouseEvent) {
-    // Place cursor at the character position where the user double-clicked
     let caretSet = false;
     if (document.caretPositionFromPoint) {
       const pos = document.caretPositionFromPoint(mouseEvent.clientX, mouseEvent.clientY);
@@ -3871,13 +3781,11 @@ function enterTextEditing(id, mouseEvent) {
       }
     }
     if (!caretSet) {
-      // Fallback: place cursor at end
       const sel = window.getSelection();
       sel.selectAllChildren(tb.contentEl);
       sel.collapseToEnd();
     }
   } else {
-    // No mouse event provided — place cursor at end
     const sel = window.getSelection();
     sel.selectAllChildren(tb.contentEl);
     sel.collapseToEnd();
@@ -3892,11 +3800,9 @@ function finalizeTextBox(id) {
   tb.contentEl.contentEditable = 'false';
   tb.el.classList.remove('editing');
 
-  // Clear any lingering browser text selection (blue highlight)
   const sel = window.getSelection();
   if (sel) sel.removeAllRanges();
 
-  // If empty, remove the text box
   const plainText = tb.contentEl.textContent.trim();
   if (plainText === '') {
     removeTextBox(id);
@@ -3905,7 +3811,6 @@ function finalizeTextBox(id) {
     return;
   }
 
-  // If it was in auto-expand mode, fix the width now
   if (tb.width === null) {
     tb.width = tb.contentEl.offsetWidth + 2;
     tb.contentEl.style.width = tb.width + 'px';
@@ -3913,10 +3818,7 @@ function finalizeTextBox(id) {
 
   if (activeTextBoxId === id) activeTextBoxId = null;
 
-  // Clean deselect everything on click-out / finalize
   deselectAll();
-
-  // Exit text place mode
   exitTextPlaceMode();
 }
 
@@ -3931,7 +3833,6 @@ function removeTextBox(id) {
   if (activeTextBoxId === id) activeTextBoxId = null;
 }
 
-// Clone a text box: creates a copy and returns it (does NOT set up drag state or selection)
 function cloneTextBox(src) {
   const state = templateStates[activeTemplateIndex];
   if (!state.textBoxes) state.textBoxes = [];
@@ -3955,7 +3856,6 @@ function cloneTextBox(src) {
     contentEl: null,
   };
 
-  // Build DOM (reuse the same structure as createTextBox but skip editing mode)
   const el = document.createElement('div');
   el.className = 'text-box';
   el.dataset.tbid = id;
@@ -3993,7 +3893,6 @@ function cloneTextBox(src) {
   state.textBoxes.push(tb);
   canvasArea.appendChild(el);
 
-  // Attach the same event handlers as createTextBox
   attachTextBoxEvents(tb);
 
   return tb;
@@ -4003,10 +3902,7 @@ function duplicateTextBox(id, e) {
   const src = getTextBoxById(id);
   if (!src) return;
 
-  // Determine all sources: if the clicked text box is selected, dup all selected;
-  // otherwise just dup this one
   const tbSources = selectedTextBoxIds.has(id) ? [...selectedTextBoxIds] : [id];
-  // Also duplicate any selected frames
   const frameSources = new Map();
   selectedIndices.forEach(idx => {
     frameSources.set(idx, { x: cells[idx].cfg.x, y: cells[idx].cfg.y });
@@ -4018,7 +3914,6 @@ function duplicateTextBox(id, e) {
   const allClonedTextBoxIds = [];
   const cloneTextStartPositions = new Map();
 
-  // Clone text boxes
   tbSources.forEach(srcId => {
     const s = getTextBoxById(srcId);
     if (!s) return;
@@ -4028,7 +3923,6 @@ function duplicateTextBox(id, e) {
     s.el.style.opacity = '0.4';
   });
 
-  // Clone frames
   const allClonedFrameIndices = [];
   const cloneFrameStartPositions = new Map();
   frameSources.forEach((pos, srcIdx) => {
@@ -4040,7 +3934,6 @@ function duplicateTextBox(id, e) {
     }
   });
 
-  // Select all clones
   allClonedFrameIndices.forEach(cloneIdx => {
     state.selectedIndices.add(cloneIdx);
     cells[cloneIdx].el.classList.add('selected', 'dragging');
@@ -4049,9 +3942,8 @@ function duplicateTextBox(id, e) {
   allClonedTextBoxIds.forEach(cloneId => selectTextBox(cloneId));
   updateLabel();
 
-  // Set up unified drag tracking using the frame dup system
   duplicating = true;
-  dupSourceIdx = -1; // not from a single frame
+  dupSourceIdx = -1; 
   dupDragStartX = e.clientX;
   dupDragStartY = e.clientY;
   dupCloneIndices = allClonedFrameIndices;
@@ -4062,7 +3954,6 @@ function duplicateTextBox(id, e) {
   dupTextBoxCloneStartPos = cloneTextStartPositions;
 }
 
-// ===================== TEXT PLACE MODE =====================
 function enterTextPlaceMode() {
   textPlaceMode = true;
   canvasArea.classList.add('text-place-mode');
@@ -4075,8 +3966,6 @@ function exitTextPlaceMode() {
   document.getElementById('textToolBtn').classList.remove('active');
 }
 
-// Canvas click handler for text placement (runs before the marquee handler)
-// Drag-to-create: mousedown starts tracking, mousemove shows preview, mouseup creates the box
 let textCreateDragging = false;
 let textCreateStartX = 0;
 let textCreateStartY = 0;
@@ -4086,8 +3975,6 @@ canvasArea.addEventListener('mousedown', (e) => {
   if (!textPlaceMode) return;
   if (e.target.closest('.text-box')) return;
 
-  // If there's an active text box being edited, finalize it and exit text mode
-  // instead of creating a new one — the user is clicking out to finish.
   if (activeTextBoxId) {
     e.preventDefault();
     e.stopPropagation();
@@ -4103,7 +3990,6 @@ canvasArea.addEventListener('mousedown', (e) => {
   textCreateStartY = e.clientY - rect.top;
   textCreateDragging = true;
 
-  // Create preview element
   textCreatePreviewEl = document.createElement('div');
   textCreatePreviewEl.className = 'text-create-preview';
   textCreatePreviewEl.style.left = textCreateStartX + 'px';
@@ -4113,9 +3999,8 @@ canvasArea.addEventListener('mousedown', (e) => {
   canvasArea.appendChild(textCreatePreviewEl);
 
   deselectAll();
-}, true); // capture phase so it fires before other canvas handlers
+}, true); 
 
-// Mousemove: update drag preview size (both width and height)
 window.addEventListener('mousemove', (e) => {
   if (!textCreateDragging || !textCreatePreviewEl) return;
 
@@ -4134,12 +4019,10 @@ window.addEventListener('mousemove', (e) => {
   textCreatePreviewEl.style.height = height + 'px';
 });
 
-// Mouseup: finalize creation
 window.addEventListener('mouseup', (e) => {
   if (!textCreateDragging) return;
   textCreateDragging = false;
 
-  // Remove preview
   if (textCreatePreviewEl) {
     textCreatePreviewEl.remove();
     textCreatePreviewEl = null;
@@ -4152,42 +4035,38 @@ window.addEventListener('mouseup', (e) => {
   const leftX = Math.min(textCreateStartX, endX);
   const topY = Math.min(textCreateStartY, endY);
 
-  const MIN_DRAG_WIDTH = 10; // threshold to distinguish click from drag
+  const MIN_DRAG_WIDTH = 10; 
 
+  saveState();
   if (dragWidth > MIN_DRAG_WIDTH) {
-    // Drag-to-create: use the dragged width, place at top-left of drawn rectangle
     const tb = createTextBox(leftX, topY);
     tb.width = dragWidth;
     tb.contentEl.style.width = dragWidth + 'px';
   } else {
-    // Simple click: auto-expand width
     createTextBox(textCreateStartX, textCreateStartY);
   }
 });
 
-// ===================== TEXT TOOL BUTTON =====================
 document.getElementById('textToolBtn').addEventListener('click', () => {
   if (textPlaceMode) {
     exitTextPlaceMode();
   } else {
-    exitShapeDrawMode(); // exit shape mode if active
+    exitShapeDrawMode(); 
     enterTextPlaceMode();
   }
 });
 
-// ===================== SHAPE DRAW MODE =====================
 let shapeDrawMode = false;
-let shapeDrawType = null; // 'square', 'roundedSquare', 'circle', 'hexagon'
+let shapeDrawType = null; 
 let shapeCreateDragging = false;
 let shapeCreateStartX = 0, shapeCreateStartY = 0;
 let shapeCreatePreviewEl = null;
 
 function enterShapeDrawMode(shapeType) {
-  exitTextPlaceMode(); // exit text mode if active
+  exitTextPlaceMode(); 
   shapeDrawMode = true;
   shapeDrawType = shapeType;
   canvasArea.classList.add('shape-draw-mode');
-  // Highlight the active shape button
   document.querySelectorAll('.rs-shape-btn').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.rs-shape-btn[data-shape="${shapeType}"]`);
   if (btn) btn.classList.add('active');
@@ -4204,7 +4083,6 @@ function exitShapeDrawMode() {
   hideGuides();
 }
 
-// Shape button click handlers
 document.querySelectorAll('.rs-shape-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const shape = btn.dataset.shape;
@@ -4216,7 +4094,6 @@ document.querySelectorAll('.rs-shape-btn').forEach(btn => {
   });
 });
 
-// Canvas mousedown for shape draw (capture phase, before other handlers)
 canvasArea.addEventListener('mousedown', (e) => {
   if (!shapeDrawMode) return;
   if (e.target.closest('.text-box')) return;
@@ -4228,7 +4105,6 @@ canvasArea.addEventListener('mousedown', (e) => {
   let startX = e.clientX - rect.left;
   let startY = e.clientY - rect.top;
 
-  // Snap start position to nearby edges
   const snapped = snapCoordsToEdges(startX, startY, true);
   startX = snapped.x;
   startY = snapped.y;
@@ -4239,7 +4115,6 @@ canvasArea.addEventListener('mousedown', (e) => {
 
   shapeCreatePreviewEl = document.createElement('div');
   shapeCreatePreviewEl.className = 'shape-create-preview';
-  // For square (null shape), use a simple rect preview; for others, use SVG
   const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
   if (!shapeKey) {
     shapeCreatePreviewEl.classList.add('rect-preview');
@@ -4253,7 +4128,6 @@ canvasArea.addEventListener('mousedown', (e) => {
   deselectAll();
 }, true);
 
-// Helper: snap a coordinate pair to nearby frame/text box edges and show guide lines
 function snapCoordsToEdges(x, y, showGuides) {
   const { hEdges, vEdges } = getEdgeAlignmentTargets(new Set(), new Set());
   let snappedX = x, snappedY = y;
@@ -4280,7 +4154,6 @@ function snapCoordsToEdges(x, y, showGuides) {
   }
 
   if (showGuides) {
-    // Show vertical guide if snapped to a vertical edge
     if (snappedToV !== null) {
       const g = ensureGuideV(0);
       g.style.left = snappedToV + 'px';
@@ -4288,12 +4161,10 @@ function snapCoordsToEdges(x, y, showGuides) {
     } else if (activeGuideVs.length > 0) {
       activeGuideVs[0].style.display = 'none';
     }
-    // Hide extra vertical guides
     for (let i = 1; i < activeGuideVs.length; i++) {
       activeGuideVs[i].style.display = 'none';
     }
 
-    // Show horizontal guide if snapped to a horizontal edge
     if (snappedToH !== null) {
       const g = ensureGuideH(0);
       g.style.top = snappedToH + 'px';
@@ -4301,7 +4172,6 @@ function snapCoordsToEdges(x, y, showGuides) {
     } else if (activeGuideHs.length > 0) {
       activeGuideHs[0].style.display = 'none';
     }
-    // Hide extra horizontal guides
     for (let i = 1; i < activeGuideHs.length; i++) {
       activeGuideHs[i].style.display = 'none';
     }
@@ -4310,7 +4180,6 @@ function snapCoordsToEdges(x, y, showGuides) {
   return { x: snappedX, y: snappedY };
 }
 
-// Helper: compute draw rect, optionally constraining to square proportions
 function getShapeDrawRect(startX, startY, curX, curY, constrain) {
   let width = Math.abs(curX - startX);
   let height = Math.abs(curY - startY);
@@ -4327,7 +4196,6 @@ function getShapeDrawRect(startX, startY, curX, curY, constrain) {
   return { left, top, width, height };
 }
 
-// Mousemove: update shape draw preview with actual shape
 window.addEventListener('mousemove', (e) => {
   if (!shapeCreateDragging || !shapeCreatePreviewEl) return;
 
@@ -4335,7 +4203,6 @@ window.addEventListener('mousemove', (e) => {
   let currentX = e.clientX - rect.left;
   let currentY = e.clientY - rect.top;
 
-  // Snap current cursor position to nearby edges (no guides yet — we'll show them for the rect)
   const snapped = snapCoordsToEdges(currentX, currentY, false);
   currentX = snapped.x;
   currentY = snapped.y;
@@ -4349,10 +4216,8 @@ window.addEventListener('mousemove', (e) => {
   shapeCreatePreviewEl.style.width = width + 'px';
   shapeCreatePreviewEl.style.height = height + 'px';
 
-  // Show guide lines for all edges of the drawn rect that align with existing edges
   showDrawRectGuides(left, top, width, height);
 
-  // Update SVG shape preview for non-square shapes
   const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
   if (shapeKey && width > 0 && height > 0) {
     const shapeDef = SHAPES[shapeKey];
@@ -4363,7 +4228,6 @@ window.addEventListener('mousemove', (e) => {
   }
 });
 
-// Show guide lines for all edges of a drawn rect that align with existing edges
 function showDrawRectGuides(left, top, width, height) {
   const { hEdges, vEdges } = getEdgeAlignmentTargets(new Set(), new Set());
   const rectEdges = {
@@ -4407,7 +4271,6 @@ function showDrawRectGuides(left, top, width, height) {
   }
 }
 
-// Hover snap: show guide lines when cursor is near edges while in shape draw mode (before click)
 canvasArea.addEventListener('mousemove', (e) => {
   if (!shapeDrawMode || shapeCreateDragging) return;
   const rect = canvasArea.getBoundingClientRect();
@@ -4416,7 +4279,6 @@ canvasArea.addEventListener('mousemove', (e) => {
   snapCoordsToEdges(x, y, true);
 });
 
-// Mouseup: create the frame
 window.addEventListener('mouseup', (e) => {
   if (!shapeCreateDragging) return;
   shapeCreateDragging = false;
@@ -4430,7 +4292,6 @@ window.addEventListener('mouseup', (e) => {
   let endX = e.clientX - rect.left;
   let endY = e.clientY - rect.top;
 
-  // Snap end position to nearby edges (no guides since mode exits immediately)
   const snapped = snapCoordsToEdges(endX, endY, false);
   endX = snapped.x;
   endY = snapped.y;
@@ -4446,13 +4307,11 @@ window.addEventListener('mouseup', (e) => {
     return;
   }
 
-  // Clamp to canvas
   const finalX = Math.max(0, x);
   const finalY = Math.max(0, y);
   const finalW = Math.min(w, CANVAS_W - finalX);
   const finalH = Math.min(h, CANVAS_H - finalY);
 
-  // Build frame config
   const shapeKey = shapeDrawType === 'square' ? null : shapeDrawType;
   const newCfg = {
     x: finalX,
@@ -4463,6 +4322,7 @@ window.addEventListener('mouseup', (e) => {
     label: shapeDrawType,
   };
 
+  saveState();
   const state = templateStates[activeTemplateIndex];
   const tmpl = TEMPLATES[activeTemplateIndex];
   tmpl.frames.push(newCfg);
@@ -4475,15 +4335,10 @@ window.addEventListener('mouseup', (e) => {
   canvasArea.appendChild(newCell.el);
   canvasArea.appendChild(newCell.controlsEl);
 
-  // Select the new frame and exit draw mode
   selectCellFor(state, newIdx);
   exitShapeDrawMode();
 });
 
-// Escape exits shape draw mode
-// (patched into the existing Escape handler below)
-
-// Escape exits text editing, shape draw mode, and deselects everything
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (activeTextBoxId) {
@@ -4496,18 +4351,16 @@ window.addEventListener('keydown', (e) => {
     if (shapeDrawMode) {
       exitShapeDrawMode();
     }
-    // Always deselect everything on Escape
     deselectAll();
   }
 });
 
-// ===================== ARROW KEY MOVEMENT =====================
 let arrowKeyGuideTimer = null;
-let arrowKeyFrameStarts = null;      // Map of idx -> {x, y} — positions at start of arrow session
-let arrowKeyTextStarts = null;       // Map of tbId -> {x, y}
-let arrowKeyAccumDx = 0;             // Accumulated raw delta since session started
+let arrowKeyFrameStarts = null;      
+let arrowKeyTextStarts = null;       
+let arrowKeyAccumDx = 0;             
 let arrowKeyAccumDy = 0;
-let arrowKeySessionTimer = null;     // Resets the session after user stops pressing
+let arrowKeySessionTimer = null;     
 
 function resetArrowKeySession() {
   arrowKeyFrameStarts = null;
@@ -4520,16 +4373,13 @@ function resetArrowKeySession() {
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
 
-  // Don't intercept if user is typing in an input or contentEditable
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.target.contentEditable === 'true') return;
 
-  // Only act if something is selected
   if (selectedIndices.size === 0 && selectedTextBoxIds.size === 0) return;
 
   e.preventDefault();
 
-  // Start a new session if one isn't active, or if selection changed
   const selectionChanged = arrowKeyFrameStarts && (
     arrowKeyFrameStarts.size !== selectedIndices.size ||
     ![...selectedIndices].every(i => arrowKeyFrameStarts.has(i)) ||
@@ -4540,6 +4390,7 @@ window.addEventListener('keydown', (e) => {
   );
 
   if (!arrowKeyFrameStarts || selectionChanged) {
+    saveState();
     arrowKeyFrameStarts = new Map();
     selectedIndices.forEach(idx => {
       const s = cells[idx];
@@ -4554,13 +4405,11 @@ window.addEventListener('keydown', (e) => {
     arrowKeyAccumDy = 0;
   }
 
-  // Accumulate the raw delta
   if (e.key === 'ArrowLeft') arrowKeyAccumDx -= ARROW_KEY_MOVE_PIXELS;
   else if (e.key === 'ArrowRight') arrowKeyAccumDx += ARROW_KEY_MOVE_PIXELS;
   else if (e.key === 'ArrowUp') arrowKeyAccumDy -= ARROW_KEY_MOVE_PIXELS;
   else if (e.key === 'ArrowDown') arrowKeyAccumDy += ARROW_KEY_MOVE_PIXELS;
 
-  // Run accumulated raw delta through alignment snap
   const dragFrameSet = new Set(arrowKeyFrameStarts.keys());
   const dragTextSet = new Set(arrowKeyTextStarts.keys());
   const { dx, dy } = applyAlignmentSnap(
@@ -4569,24 +4418,19 @@ window.addEventListener('keydown', (e) => {
     arrowKeyTextStarts.size > 0 ? arrowKeyTextStarts : null
   );
 
-  // Apply positions relative to the session start
   applyDragPositions(
     dx, dy,
     arrowKeyFrameStarts.size > 0 ? arrowKeyFrameStarts : null,
     arrowKeyTextStarts.size > 0 ? arrowKeyTextStarts : null
   );
 
-  // Auto-hide guides after a brief delay
   clearTimeout(arrowKeyGuideTimer);
   arrowKeyGuideTimer = setTimeout(() => hideGuides(), 500);
 
-  // Reset session after a longer idle period so next press starts fresh
   clearTimeout(arrowKeySessionTimer);
   arrowKeySessionTimer = setTimeout(resetArrowKeySession, 800);
 });
 
-// ===================== TEXT FORMAT SYNC =====================
-// Syncs the right sidebar UI to reflect the currently selected text box(es)
 function syncFormatUIToSelection() {
   const section = document.getElementById('textFormatSection');
   const colorSection = document.getElementById('textColorSection');
@@ -4596,24 +4440,20 @@ function syncFormatUIToSelection() {
   const hasFrames = selectedIndices.size > 0;
   const onlyFrames = hasFrames && !hasText;
 
-  // Text format: only when text boxes are selected
   if (hasText) {
     section.classList.remove('rs-disabled');
   } else {
     section.classList.add('rs-disabled');
   }
 
-  // Color: active when anything is selected
   if (hasText || hasFrames) {
     colorSection.classList.remove('rs-disabled');
   } else {
     colorSection.classList.add('rs-disabled');
   }
 
-  // Border weight: only when frames are selected and NO text boxes
   if (onlyFrames) {
     borderSection.classList.remove('rs-disabled');
-    // Sync border UI from first selected frame
     const firstIdx = [...selectedIndices][0];
     const s = cells[firstIdx];
     if (s) {
@@ -4626,7 +4466,6 @@ function syncFormatUIToSelection() {
 
   if (!hasText && !hasFrames) return;
 
-  // Sync text format UI from first selected text box
   if (hasText) {
     const firstId = [...selectedTextBoxIds][0];
     const tb = getTextBoxById(firstId);
@@ -4642,7 +4481,6 @@ function syncFormatUIToSelection() {
     document.getElementById('rsAlignRight').classList.toggle('active', tb.align === 'right');
     updateColorUI(tb.fontColor);
   } else if (hasFrames) {
-    // Show frame border color in color UI
     const firstIdx = [...selectedIndices][0];
     const s = cells[firstIdx];
     if (s) updateColorUI(s.borderColor);
@@ -4655,13 +4493,11 @@ function updateColorUI(color) {
   document.getElementById('rsHexInput').value = hex;
   document.getElementById('rsColorPreview').style.background = color;
 
-  // Update swatch active state
   document.querySelectorAll('.rs-swatch').forEach(sw => {
     sw.classList.toggle('active', sw.dataset.color.toUpperCase() === hex);
   });
 }
 
-// Apply a formatting change to all selected text boxes
 function applyToSelectedTextBoxes(fn) {
   selectedTextBoxIds.forEach(id => {
     const tb = getTextBoxById(id);
@@ -4670,7 +4506,6 @@ function applyToSelectedTextBoxes(fn) {
   syncFormatUIToSelection();
 }
 
-// Apply border color to all selected frames
 function applyColorToSelectedFrames(color) {
   selectedIndices.forEach(idx => {
     const s = cells[idx];
@@ -4685,9 +4520,7 @@ function applyColorToSelectedFrames(color) {
   syncFormatUIToSelection();
 }
 
-// Apply a combined color change to both text boxes and frames
 function applyColorToSelection(color) {
-  // Apply to text boxes
   selectedTextBoxIds.forEach(id => {
     const tb = getTextBoxById(id);
     if (tb) {
@@ -4695,7 +4528,6 @@ function applyColorToSelection(color) {
       tb.contentEl.style.color = color;
     }
   });
-  // Apply to frames (border color)
   selectedIndices.forEach(idx => {
     const s = cells[idx];
     if (!s) return;
@@ -4710,8 +4542,6 @@ function applyColorToSelection(color) {
   updateColorUI(color);
 }
 
-// ===================== RIGHT SIDEBAR WIRING =====================
-// Populate font dropdown
 const fontSelect = document.getElementById('rsFontFamily');
 TEXT_FONTS.forEach(f => {
   const opt = document.createElement('option');
@@ -4724,6 +4554,7 @@ TEXT_FONTS.forEach(f => {
 fontSelect.addEventListener('change', () => {
   const font = TEXT_FONTS.find(f => f.name === fontSelect.value);
   if (!font) return;
+  saveState();
   applyToSelectedTextBoxes(tb => {
     tb.fontFamily = font.family;
     tb.fontName = font.name;
@@ -4731,7 +4562,6 @@ fontSelect.addEventListener('change', () => {
   });
 });
 
-// Populate font size dropdown
 const sizeSelect = document.getElementById('rsFontSize');
 TEXT_FONT_SIZES.forEach(s => {
   const opt = document.createElement('option');
@@ -4742,6 +4572,7 @@ TEXT_FONT_SIZES.forEach(s => {
 sizeSelect.value = 24;
 
 sizeSelect.addEventListener('change', () => {
+  saveState();
   const sz = parseInt(sizeSelect.value);
   applyToSelectedTextBoxes(tb => {
     tb.fontSize = sz;
@@ -4749,29 +4580,31 @@ sizeSelect.addEventListener('change', () => {
   });
 });
 
-// Bold / Italic / Underline
 document.getElementById('rsBold').addEventListener('click', () => {
+  saveState();
   applyToSelectedTextBoxes(tb => {
     tb.bold = !tb.bold;
     tb.contentEl.style.fontWeight = tb.bold ? 'bold' : 'normal';
   });
 });
 document.getElementById('rsItalic').addEventListener('click', () => {
+  saveState();
   applyToSelectedTextBoxes(tb => {
     tb.italic = !tb.italic;
     tb.contentEl.style.fontStyle = tb.italic ? 'italic' : 'normal';
   });
 });
 document.getElementById('rsUnderline').addEventListener('click', () => {
+  saveState();
   applyToSelectedTextBoxes(tb => {
     tb.underline = !tb.underline;
     tb.contentEl.style.textDecoration = tb.underline ? 'underline' : 'none';
   });
 });
 
-// Alignment
 ['Left', 'Center', 'Right'].forEach(a => {
   document.getElementById('rsAlign' + a).addEventListener('click', () => {
+    saveState();
     const val = a.toLowerCase();
     applyToSelectedTextBoxes(tb => {
       tb.align = val;
@@ -4780,7 +4613,6 @@ document.getElementById('rsUnderline').addEventListener('click', () => {
   });
 });
 
-// Color swatches
 const swatchContainer = document.getElementById('rsColorSwatches');
 DEFAULT_COLOR_PALETTE.forEach(color => {
   const sw = document.createElement('div');
@@ -4788,18 +4620,24 @@ DEFAULT_COLOR_PALETTE.forEach(color => {
   sw.style.background = color;
   sw.dataset.color = color;
   sw.addEventListener('click', () => {
+    saveState();
     applyColorToSelection(color);
   });
   swatchContainer.appendChild(sw);
 });
 
-// Custom color picker
+document.getElementById('rsColorPicker').addEventListener('change', (e) => {
+  applyColorToSelection(e.target.value);
+});
+document.getElementById('rsColorPreview').addEventListener('mousedown', () => {
+  saveState();
+});
 document.getElementById('rsColorPicker').addEventListener('input', (e) => {
   applyColorToSelection(e.target.value);
 });
 
-// Hex input
 document.getElementById('rsHexInput').addEventListener('change', (e) => {
+  saveState();
   let val = e.target.value.trim();
   if (!val.startsWith('#')) val = '#' + val;
   if (/^#[0-9a-fA-F]{6}$/.test(val)) {
@@ -4807,8 +4645,8 @@ document.getElementById('rsHexInput').addEventListener('change', (e) => {
   }
 });
 
-// ===================== BORDER WEIGHT CONTROLS =====================
 document.getElementById('rsBorderToggle').addEventListener('change', (e) => {
+  saveState();
   const enabled = e.target.checked;
   selectedIndices.forEach(idx => {
     const s = cells[idx];
@@ -4821,6 +4659,7 @@ document.getElementById('rsBorderToggle').addEventListener('change', (e) => {
 });
 
 document.getElementById('rsBorderWeight').addEventListener('change', (e) => {
+  saveState();
   const weight = parseFloat(e.target.value);
   selectedIndices.forEach(idx => {
     const s = cells[idx];
@@ -4832,28 +4671,22 @@ document.getElementById('rsBorderWeight').addEventListener('change', (e) => {
   syncFormatUIToSelection();
 });
 
-// ===================== TEXT BOX DRAG/RESIZE IN GLOBAL HANDLERS =====================
-
 window.addEventListener('mousemove', (e) => {
-  // Deferred ctrl+drag: create clone on first meaningful move
   if (textBoxDupPending && textBoxDupSourceId) {
     const dx = e.clientX - textBoxDupDragStartX;
     const dy = e.clientY - textBoxDupDragStartY;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      // Drag detected — duplicate all selected objects now
       textBoxDupPending = false;
+      saveState();
       duplicateTextBox(textBoxDupSourceId, e);
-      // duplicateTextBox sets up the unified 'duplicating' state,
-      // so the frame dup handler in the main mousemove takes over for all clones
     }
   }
 
-  // Text box dragging — also moves selected frames
   if (textBoxDragging && textBoxDragId && multiTextDragStartPositions) {
+    if (!hasSavedForThisDrag) { saveState(); hasSavedForThisDrag = true; }
     let rawDx = e.clientX - textBoxDragStartX;
     let rawDy = e.clientY - textBoxDragStartY;
 
-    // Axis-lock: determine axis on first meaningful move, then zero the other
     if (axisLockActive) {
       if (axisLockAxis === null && (Math.abs(rawDx) > 3 || Math.abs(rawDy) > 3)) {
         axisLockAxis = Math.abs(rawDx) >= Math.abs(rawDy) ? 'h' : 'v';
@@ -4868,8 +4701,8 @@ window.addEventListener('mousemove', (e) => {
     applyDragPositions(dx, dy, multiFrameDragStartPositions, multiTextDragStartPositions);
   }
 
-  // Text box resizing
   if (textBoxResizing && textBoxResizeId) {
+    if (!hasSavedForThisDrag) { saveState(); hasSavedForThisDrag = true; }
     const tb = getTextBoxById(textBoxResizeId);
     if (!tb) return;
     const dx = e.clientX - textBoxResizeStartX;
@@ -4888,68 +4721,18 @@ window.addEventListener('mousemove', (e) => {
   }
 });
 
-window.addEventListener('mouseup', (e) => {
-  hideGuides();
-
-  // Deferred ctrl+click: no drag happened — toggle multi-select
-  if (textBoxDupPending && textBoxDupSourceId) {
-    const id = textBoxDupSourceId;
-    if (selectedTextBoxIds.has(id)) {
-      deselectTextBox(id);
-    } else {
-      selectTextBox(id);
-    }
-    textBoxDupPending = false;
-    textBoxDupSourceId = null;
-    textBoxDupCloneId = null;
-  }
-
-  if (textBoxDragging) {
-    textBoxDragging = false;
-    textBoxDragId = null;
-    multiTextDragStartPositions = null;
-    multiFrameDragStartPositions = null;
-    axisLockActive = false; axisLockAxis = null;
-  }
-  if (textBoxResizing) {
-    textBoxResizing = false;
-    textBoxResizeId = null;
-  }
-});
-
-// ===================== DELETE KEY FOR TEXT BOXES =====================
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    if (e.target.contentEditable === 'true') return; // don't intercept when typing
+    if (e.target.contentEditable === 'true') return; 
 
     if (selectedTextBoxIds.size > 0) {
+      saveState();
       [...selectedTextBoxIds].forEach(id => removeTextBox(id));
-      // Don't prevent default if frame deletion should also happen;
-      // frame delete handler checks selectedIndices separately
     }
   }
 });
 
-// ===================== MARQUEE SELECT: INCLUDE TEXT BOXES =====================
-// Augment the marquee finalization in mouseup to also select text boxes
-// We'll patch this by wrapping the marquee logic. Since the marquee code
-// already exists in the global mouseup, we'll add a secondary check.
-
-// Store ref to detect marquee completion in the existing handler
-// We do this via a MutationObserver approach — but simpler: just add another
-// mouseup listener that checks for marquee area and selects text boxes too.
-window.addEventListener('mouseup', (e) => {
-  // This runs after the main mouseup which handles marquee for cells.
-  // We look at selectedIndices to see if a marquee selection just happened,
-  // and also check text boxes in the same region.
-  // Since marqueeEl is removed by the main handler, we use a brief state flag.
-});
-
-// Instead, we'll intercept the marquee finalization directly by modifying the main handler.
-// We do this by storing marquee bounds before the main handler clears them.
-
-// ===================== TEXT BOX EXPORT (Canvas 2D drawing) =====================
 function drawTextBoxToCanvas(ctx, tb) {
   ctx.save();
 
@@ -4962,17 +4745,14 @@ function drawTextBoxToCanvas(ctx, tb) {
   ctx.fillStyle = tb.fontColor;
   ctx.textBaseline = 'top';
 
-  // Get the plain text (strip HTML tags, handle <br> as newlines, decode entities)
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = tb.text;
-  // Convert <br> and <div> boundaries to newlines
   const textContent = tb.text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/div><div>/gi, '\n')
     .replace(/<div>/gi, '\n')
     .replace(/<\/div>/gi, '')
     .replace(/<[^>]*>/g, '');
-  // Decode HTML entities
   tempDiv.innerHTML = textContent;
   const decoded = tempDiv.textContent || tempDiv.innerText || '';
 
@@ -4980,7 +4760,6 @@ function drawTextBoxToCanvas(ctx, tb) {
   const lineHeight = fontSize * 1.3;
   const boxWidth = tb.width || 9999;
 
-  // Word-wrap each line to fit within boxWidth
   const wrappedLines = [];
   lines.forEach(line => {
     if (line === '') { wrappedLines.push(''); return; }
@@ -5011,7 +4790,6 @@ function drawTextBoxToCanvas(ctx, tb) {
     ctx.fillText(line, drawX, tb.y + i * lineHeight);
   });
 
-  // Underline
   if (tb.underline) {
     ctx.strokeStyle = tb.fontColor;
     ctx.lineWidth = Math.max(1, fontSize / 14);
@@ -5031,10 +4809,8 @@ function drawTextBoxToCanvas(ctx, tb) {
   ctx.restore();
 }
 
-// ===================== TEMPLATE SWITCH: REBUILD TEXT BOXES =====================
 const _origSwitchTemplate = switchTemplate;
 switchTemplate = function(idx) {
-  // Finalize any active text editing
   if (activeTextBoxId) finalizeTextBox(activeTextBoxId);
   deselectAllTextBoxes();
   exitTextPlaceMode();
@@ -5043,7 +4819,6 @@ switchTemplate = function(idx) {
 
   _origSwitchTemplate(idx);
 
-  // Re-add text box DOM elements for the new template
   const state = templateStates[idx];
   if (state && state.textBoxes) {
     state.textBoxes.forEach(tb => {
@@ -5052,23 +4827,14 @@ switchTemplate = function(idx) {
   }
 };
 
-// ===================== PREVENT DESELECT WHEN CLICKING RIGHT SIDEBAR =====================
-// The existing global mousedown deselects when clicking outside canvas/cells.
-// We need to also exempt the right sidebar.
-// We'll add the exemption by patching — the existing handler already checks for buttons/inputs.
-// But we also need to exempt the right sidebar area. We'll handle this by adding
-// a stopPropagation on the right sidebar's mousedown.
 document.getElementById('rightSidebar').addEventListener('mousedown', (e) => {
-  // Don't let this bubble to the global deselect handler
   e.stopPropagation();
 });
 
-// Initialize format section as disabled
 document.getElementById('textFormatSection').classList.add('rs-disabled');
 document.getElementById('textColorSection').classList.add('rs-disabled');
 document.getElementById('borderWeightSection').classList.add('rs-disabled');
 
-// ===================== DOWNLOAD HANDLER =====================
 document.getElementById('downloadBtn').addEventListener('click', async () => {
   const btn = document.getElementById('downloadBtn');
   const originalText = btn.textContent;
@@ -5106,7 +4872,6 @@ document.getElementById('downloadBtn').addEventListener('click', async () => {
   }
 });
 
-// ===================== INIT: TAG TEMPLATES & ACTIVATE FIRST =====================
 TEMPLATES.forEach((t, i) => { t._index = i; });
 switchTemplate(0);
 </script>
