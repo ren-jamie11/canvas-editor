@@ -18,6 +18,7 @@
     display: flex;
     flex-direction: row;
     padding: 0;
+    padding-right: 220px; /* Reserve space for the fixed right sidebar */
     gap: 0;
   }
 
@@ -255,7 +256,8 @@
   .cell img {
     position: absolute;
     display: block;
-    transform-origin: 0 0;
+    left: 0;
+    top: 0;
     user-select: none;
     -webkit-user-drag: none;
     pointer-events: none;
@@ -503,8 +505,13 @@
     display: flex;
     flex-direction: column;
     padding: 0;
-    min-height: 100vh;
+    /* Fixed to viewport — stays visible regardless of page scroll. */
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
     overflow-y: auto;
+    z-index: 1000;
   }
 
   .rs-section {
@@ -1655,31 +1662,31 @@ const SHAPES = {
 };
 
 const TEMPLATES = [
-     {
+        {
     name: 'Custom Template',
-    description: '1464×3000 · 10 frames',
-    canvasW: 1464,
-    canvasH: 3000,
+    description: '732×1500 · 10 frames',
+    canvasW: 732,
+    canvasH: 1500,
     bgColor: '#ffffff',
     bgImage: null,
     frames: [
-      { x: 0, y: 0, w: 1464, h: 587, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 2410, w: 1464, h: 590, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1187, w: 1464, h: 650, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 722, w: 337, h: 337, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1847, w: 471, h: 549, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 993, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 497, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 375, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 752, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 1127, y: 722, w: 337, h: 337, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+      { x: 0, y: 0, w: 732, h: 314, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1201, w: 732, h: 299, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 561, w: 732, h: 339, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 353, w: 169, h: 169, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 913, w: 236, h: 275, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 497, y: 913, w: 236, h: 275, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 248, y: 913, w: 236, h: 275, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 188, y: 353, w: 169, h: 169, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 376, y: 353, w: 169, h: 169, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 564, y: 353, w: 169, h: 169, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
     ],
     textBoxes: [
-      { x: 531, y: 637, width: 403, text: "Product Detail", fontName: 'DM Sans', fontSize: 36, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 40, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 415, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
+      { x: 265, y: 322, width: 202, text: "Product Detail", fontName: 'DM Sans', fontSize: 18, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 20, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 208, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 396, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 584, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
     ],
   },
     {
@@ -3849,16 +3856,36 @@ function updateLabel() {
 
 function calculateDefaultTransform(s) {
   if (!s.loaded) return;
-  s.scale = Math.max(s.cfg.w / s.naturalW, s.cfg.h / s.naturalH);
+  // Cover-fit: scale so the image fully covers the frame.
+  // Tiny epsilon prevents floating-point rounding from leaving sub-pixel gaps.
+  const rawScale = Math.max(s.cfg.w / s.naturalW, s.cfg.h / s.naturalH);
+  s.scale = rawScale * (1 + 1e-10);
   s.posX = (s.cfg.w - s.naturalW * s.scale) / 2;
   s.posY = (s.cfg.h - s.naturalH * s.scale) / 2;
 }
 
 function applyTransformFor(state, i) {
   const s = state.cells[i];
-  if (!s.loaded) { s.img.style.transform = 'none'; return; }
+  if (!s.loaded) {
+    // Clear positioning for unloaded cells.
+    s.img.style.left = '0px';
+    s.img.style.top = '0px';
+    s.img.style.width = '';
+    s.img.style.height = '';
+    return;
+  }
   clampPosition(s);
-  s.img.style.transform = `translate(${s.posX}px, ${s.posY}px) scale(${s.scale})`;
+  // Use CSS width/height + left/top instead of transform: scale + translate.
+  // This places the image in the same layout coordinate space as the frame
+  // div, so the browser pixel-snaps both edges together — eliminating
+  // sub-pixel gaps that occur with transform-based scaling at non-100%
+  // browser zoom levels.
+  const imgW = s.naturalW * s.scale;
+  const imgH = s.naturalH * s.scale;
+  s.img.style.width = imgW + 'px';
+  s.img.style.height = imgH + 'px';
+  s.img.style.left = s.posX + 'px';
+  s.img.style.top = s.posY + 'px';
   if (state === templateStates[activeTemplateIndex] && selectedIndices.has(i)) updateLabel();
 }
 
@@ -3871,12 +3898,13 @@ function clampPosition(s) {
   const imgW = s.naturalW * s.scale;
   const imgH = s.naturalH * s.scale;
 
-  if (imgW >= cw) {
+  const TOL = 0.5;
+  if (imgW >= cw - TOL) {
     s.posX = Math.min(0, Math.max(cw - imgW, s.posX));
   } else {
     s.posX = Math.max(0, Math.min(cw - imgW, s.posX));
   }
-  if (imgH >= ch) {
+  if (imgH >= ch - TOL) {
     s.posY = Math.min(0, Math.max(ch - imgH, s.posY));
   } else {
     s.posY = Math.max(0, Math.min(ch - imgH, s.posY));
@@ -4005,7 +4033,10 @@ window.addEventListener('keydown', (e) => {
         s.scale = 1;
         s.posX = 0;
         s.posY = 0;
-        s.img.style.transform = 'none';
+        s.img.style.width = '';
+        s.img.style.height = '';
+        s.img.style.left = '0px';
+        s.img.style.top = '0px';
         s.el.classList.remove('has-image');
       });
       updateLabel();
