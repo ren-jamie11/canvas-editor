@@ -1663,7 +1663,7 @@ const SHAPES = {
 
 const TEMPLATES = [
         {
-    name: 'Custom Template',
+    name: 'Desktop',
     description: '732×1500 · 10 frames',
     canvasW: 732,
     canvasH: 1500,
@@ -1689,31 +1689,30 @@ const TEMPLATES = [
       { x: 584, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
     ],
   },
-    {
-    name: 'Custom Template 1',
-    description: '1464×3000 · 10 frames',
-    canvasW: 1464,
-    canvasH: 3000,
+     {
+    name: 'Mobile',
+    description: '600×2250 · 10 frames',
+    canvasW: 600,
+    canvasH: 2250,
     bgColor: '#ffffff',
     bgImage: null,
     frames: [
-      { x: 0, y: 0, w: 1464, h: 627, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 2402, w: 1464, h: 598, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1143, w: 1464, h: 678, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 722, w: 337, h: 337, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1835, w: 471, h: 549, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 993, y: 1835, w: 471, h: 549, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 497, y: 1835, w: 471, h: 549, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 375, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: true, borderColor: '#5a5aff', borderWidth: 1 },
-      { x: 752, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 1127, y: 722, w: 337, h: 337, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+      { x: 0, y: 1836, w: 600, h: 414, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 742, w: 600, h: 417, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 0, w: 600, h: 413, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 475, w: 189, h: 205, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 408, y: 475, w: 189, h: 205, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 203, y: 475, w: 189, h: 205, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1175, w: 290, h: 314, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 305, y: 1175, w: 295, h: 314, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1506, w: 290, h: 314, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 305, y: 1506, w: 295, h: 314, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
     ],
     textBoxes: [
-      { x: 531, y: 649, width: 403, text: "Product Detail", fontName: 'DM Sans', fontSize: 36, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 40, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 415, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' }
+      { x: 213, y: 428, width: 175, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'left' },
+      { x: 12, y: 701, width: 166, text: "Product Detail", fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 215, y: 701, width: 166, text: "Product Detail", fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 420, y: 701, width: 166, text: "Product Detail", fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
     ],
   },
 ];
@@ -2430,6 +2429,69 @@ function applyStretchMoveSnap(rawDx, rawDy, side, stretchStartStates,
 }
 
 function applyDragPositions(dx, dy, frameStartPositions, textStartPositions) {
+  // When multiple objects are selected, compute a single group-level clamp
+  // so that no individual object exceeds the canvas bounds, but all objects
+  // shift by the same (dx, dy) — preserving relative positions.
+  const totalObjects = (frameStartPositions ? frameStartPositions.size : 0) +
+                       (textStartPositions ? textStartPositions.size : 0);
+  
+  if (totalObjects > 1) {
+    // Find the tightest (dx, dy) that keeps every object inside the canvas.
+    let clampedDx = dx;
+    let clampedDy = dy;
+
+    if (frameStartPositions) {
+      frameStartPositions.forEach((start, idx) => {
+        const s = cells[idx];
+        if (!s) return;
+        const cfg = s.cfg;
+        const newX = start.x + clampedDx;
+        const newY = start.y + clampedDy;
+        // Pull dx/dy back if this object would exceed bounds.
+        if (newX < 0) clampedDx = clampedDx + (0 - newX);
+        if (newY < 0) clampedDy = clampedDy + (0 - newY);
+        if (newX + cfg.w > CANVAS_W) clampedDx = clampedDx - (newX + cfg.w - CANVAS_W);
+        if (newY + cfg.h > CANVAS_H) clampedDy = clampedDy - (newY + cfg.h - CANVAS_H);
+      });
+    }
+    if (textStartPositions) {
+      textStartPositions.forEach((start, tbId) => {
+        const newX = start.x + clampedDx;
+        const newY = start.y + clampedDy;
+        if (newX < 0) clampedDx = clampedDx + (0 - newX);
+        if (newY < 0) clampedDy = clampedDy + (0 - newY);
+        if (newX + 20 > CANVAS_W) clampedDx = clampedDx - (newX + 20 - CANVAS_W);
+        if (newY + 20 > CANVAS_H) clampedDy = clampedDy - (newY + 20 - CANVAS_H);
+      });
+    }
+
+    // Apply the uniformly clamped delta to all objects.
+    if (frameStartPositions) {
+      frameStartPositions.forEach((start, idx) => {
+        const s = cells[idx];
+        if (!s) return;
+        const cfg = s.cfg;
+        cfg.x = start.x + clampedDx;
+        cfg.y = start.y + clampedDy;
+        s.el.style.left = cfg.x + 'px';
+        s.el.style.top = cfg.y + 'px';
+        syncFrameControls(s);
+      });
+    }
+    if (textStartPositions) {
+      textStartPositions.forEach((start, tbId) => {
+        const tb = getTextBoxById(tbId);
+        if (!tb) return;
+        tb.x = start.x + clampedDx;
+        tb.y = start.y + clampedDy;
+        tb.el.style.left = tb.x + 'px';
+        tb.el.style.top = tb.y + 'px';
+      });
+    }
+    return;
+  }
+
+  // Single object — original per-object clamping (preserves existing behavior).
   if (frameStartPositions) {
     frameStartPositions.forEach((start, idx) => {
       const s = cells[idx];
