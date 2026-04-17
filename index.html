@@ -142,6 +142,51 @@
     color: #666;
   }
 
+  /* ---- Viewport toggle (Desktop/Mobile) ----
+     Anchored top-left of the main-content area, outside the sidebar.
+     Segmented control with two options; the active one highlights in accent. */
+  .viewport-toggle {
+    position: fixed;
+    top: 20px;
+    left: 220px; /* sidebar width (200) + 20px gap */
+    display: inline-flex;
+    background: #111114;
+    border: 1px solid #2a2a30;
+    border-radius: 8px;
+    padding: 3px;
+    gap: 2px;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .viewport-toggle button {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.15s, color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .viewport-toggle button:hover {
+    color: #ccc;
+  }
+  .viewport-toggle button.active {
+    background: #5a5aff;
+    color: #fff;
+  }
+  .viewport-toggle button svg {
+    width: 13px;
+    height: 13px;
+  }
+  .viewport-toggle.hidden { display: none; }
+
   /* ---- Canvas container ---- */
   .canvas-area {
     position: relative;
@@ -946,6 +991,24 @@
 <div class="main-content">
   <h1>Canvas Frame Editor</h1>
 
+  <div class="viewport-toggle" id="viewportToggle">
+    <button type="button" id="viewportDesktopBtn" data-viewport="desktop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+      Desktop
+    </button>
+    <button type="button" id="viewportMobileBtn" data-viewport="mobile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="7" y="2" width="10" height="20" rx="2"/>
+        <line x1="11" y1="18" x2="13" y2="18"/>
+      </svg>
+      Mobile
+    </button>
+  </div>
+
   <div class="top-bar">
     <button id="bulkUploadBtn">Upload Images</button>
     <input type="file" id="bulkFileInput" multiple accept="image/*,.mpo" style="display: none;">
@@ -1161,7 +1224,10 @@ function captureState(state) {
       bold: tb.bold,
       italic: tb.italic,
       underline: tb.underline,
-      align: tb.align
+      align: tb.align,
+      // Sync tags — preserve through undo/redo
+      _fromTemplate: !!tb._fromTemplate,
+      _matchingIndex: (typeof tb._matchingIndex === 'number') ? tb._matchingIndex : null,
     }))
   };
 }
@@ -1244,6 +1310,128 @@ function applyState(idx, snapshot) {
   });
 
   deselectAll();
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   DESKTOP → MOBILE SYNC                                                  ║
+// ║                                                                          ║
+// ║   Called whenever the user toggles from desktop to mobile within the     ║
+// ║   same pair. Pushes a pre-sync snapshot onto the mobile side's undo      ║
+// ║   stack, then:                                                           ║
+// ║     • For each paired PREDEFINED frame: copies the image (src +          ║
+// ║       natural dimensions + loaded flag) from desktop to mobile, then     ║
+// ║       recomputes scale/pos fresh to cover-fit the mobile frame.          ║
+// ║     • For each paired PREDEFINED textbox: copies TEXT CONTENT only.      ║
+// ║   Unpaired predefined objects and all user-added objects are untouched.  ║
+// ║                                                                          ║
+// ║   Pairing uses the author-specified `matching_index` field on each       ║
+// ║   frame/textbox (stamped internally as `_matchingIndex`). Two objects    ║
+// ║   are paired iff they live in the same pair, are the same object type,  ║
+// ║   and share a numeric _matchingIndex. If two objects on the same side   ║
+// ║   share the same _matchingIndex, the first one wins and we console.warn.║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+// Unified accessors: cells carry these on cfg, textboxes carry them on the object itself.
+function _isFromTemplate(obj) {
+  if (obj && obj.cfg) return !!obj.cfg._fromTemplate;
+  return !!(obj && obj._fromTemplate);
+}
+function _getMatchingIndex(obj) {
+  const raw = (obj && obj.cfg) ? obj.cfg._matchingIndex : (obj ? obj._matchingIndex : null);
+  return (typeof raw === 'number') ? raw : null;
+}
+
+function buildSyncPairs(desktopObjs, mobileObjs, objectTypeLabel) {
+  // Returns [[desktopObj, mobileObj], ...] for predefined objects whose
+  // _matchingIndex values match across sides. User-added objects and any
+  // predefined object with _matchingIndex === null are skipped.
+  const dPredef = (desktopObjs || []).filter(_isFromTemplate);
+  const mPredef = (mobileObjs || []).filter(_isFromTemplate);
+
+  // Build mobile map, first-wins + warn on duplicates.
+  const mByIdx = new Map();
+  mPredef.forEach(m => {
+    const i = _getMatchingIndex(m);
+    if (i === null) return;
+    if (mByIdx.has(i)) {
+      console.warn(`[sync] duplicate matching_index ${i} on mobile ${objectTypeLabel || ''}; ignoring the later one.`);
+      return;
+    }
+    mByIdx.set(i, m);
+  });
+
+  // Track duplicates on desktop side too.
+  const seenDesktopIdx = new Set();
+  const pairs = [];
+  dPredef.forEach(d => {
+    const i = _getMatchingIndex(d);
+    if (i === null) return;
+    if (seenDesktopIdx.has(i)) {
+      console.warn(`[sync] duplicate matching_index ${i} on desktop ${objectTypeLabel || ''}; ignoring the later one.`);
+      return;
+    }
+    seenDesktopIdx.add(i);
+    const m = mByIdx.get(i);
+    if (m) pairs.push([d, m]);
+  });
+  return pairs;
+}
+
+function syncDesktopToMobile(pairIdx) {
+  const dIdx = getTemplateIndex(pairIdx, 'desktop');
+  const mIdx = getTemplateIndex(pairIdx, 'mobile');
+  if (dIdx < 0 || mIdx < 0) return;
+
+  const dState = templateStates[dIdx];
+  if (!dState) return; // Nothing to copy from.
+
+  // Lazily init mobile state if the user has never visited it.
+  if (!templateStates[mIdx]) {
+    templateStates[mIdx] = createTemplateState(TEMPLATES[mIdx]);
+  }
+  const mState = templateStates[mIdx];
+
+  // Checkpoint mobile so undo can revert this sync.
+  if (!mState.undoStack) mState.undoStack = [];
+  if (!mState.redoStack) mState.redoStack = [];
+  mState.undoStack.push(captureState(mState));
+  if (mState.undoStack.length > 50) mState.undoStack.shift();
+  mState.redoStack = [];
+
+  // ─── Frame sync ──────────────────────────────────────────────────────
+  const framePairs = buildSyncPairs(dState.cells, mState.cells, 'frame');
+  framePairs.forEach(([dCell, mCell]) => {
+    const mCellIdx = mState.cells.indexOf(mCell);
+    if (!dCell.loaded) {
+      // Desktop has no image — clear mobile's image to match.
+      mCell.loaded = false;
+      mCell.naturalW = 0;
+      mCell.naturalH = 0;
+      mCell.scale = 1;
+      mCell.posX = 0;
+      mCell.posY = 0;
+      mCell.img.src = '';
+      mCell.el.classList.remove('has-image');
+      if (mCellIdx >= 0) applyTransformFor(mState, mCellIdx);
+      return;
+    }
+    // Copy image data.
+    mCell.img.src = dCell.img.src;
+    mCell.naturalW = dCell.naturalW;
+    mCell.naturalH = dCell.naturalH;
+    mCell.loaded = true;
+    mCell.el.classList.add('has-image');
+    // Recompute transform fresh for mobile frame's dimensions (cover-fit, centered).
+    calculateDefaultTransform(mCell);
+    if (mCellIdx >= 0) applyTransformFor(mState, mCellIdx);
+  });
+
+  // ─── Textbox sync (text content only) ────────────────────────────────
+  const tbPairs = buildSyncPairs(dState.textBoxes || [], mState.textBoxes || [], 'textbox');
+  tbPairs.forEach(([dTb, mTb]) => {
+    mTb.text = dTb.text;
+    if (mTb.contentEl) mTb.contentEl.innerHTML = mTb.text;
+  });
 }
 
 function performUndo() {
@@ -1661,61 +1849,142 @@ const SHAPES = {
   hexagon: { viewBox: '0 0 100 87', path: 'M25 0 L75 0 L100 43.5 L75 87 L25 87 L0 43.5 Z' },
 };
 
-const TEMPLATES = [
-        {
-    name: 'Desktop',
-    description: '732×1500 · 10 frames',
-    canvasW: 732,
-    canvasH: 1500,
-    bgColor: '#ffffff',
-    bgImage: null,
-    frames: [
-      { x: 0, y: 0, w: 732, h: 314, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1201, w: 732, h: 299, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 561, w: 732, h: 339, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 353, w: 169, h: 169, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 913, w: 236, h: 275, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 497, y: 913, w: 236, h: 275, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 248, y: 913, w: 236, h: 275, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 188, y: 353, w: 169, h: 169, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 376, y: 353, w: 169, h: 169, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 564, y: 353, w: 169, h: 169, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
-    ],
-    textBoxes: [
-      { x: 265, y: 322, width: 202, text: "Product Detail", fontName: 'DM Sans', fontSize: 18, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 20, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 208, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 396, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 584, y: 532, width: 129, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
-    ],
-  },
-     {
-    name: 'Mobile',
-    description: '600×2250 · 10 frames',
-    canvasW: 600,
-    canvasH: 2250,
-    bgColor: '#ffffff',
-    bgImage: null,
-    frames: [
-      { x: 0, y: 1836, w: 600, h: 414, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 742, w: 600, h: 417, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 0, w: 600, h: 413, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 475, w: 189, h: 205, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 408, y: 475, w: 189, h: 205, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 203, y: 475, w: 189, h: 205, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1175, w: 290, h: 314, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 305, y: 1175, w: 295, h: 314, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 0, y: 1506, w: 290, h: 314, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-      { x: 305, y: 1506, w: 295, h: 314, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
-    ],
-    textBoxes: [
-      { x: 213, y: 428, width: 175, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'left' },
-      { x: 12, y: 701, width: 166, text: "Product Detail", fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 215, y: 701, width: 166, text: "Product Detail", fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
-      { x: 420, y: 701, width: 166, text: "Product Detail", fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
-    ],
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   TEMPLATE_PAIRS — authoring format                                      ║
+// ║                                                                          ║
+// ║   Each pair has a `desktop` and `mobile` variant. Correspondence is      ║
+// ║   declared via `matching_index` on each frame and textbox. Objects on    ║
+// ║   opposite sides with the same numeric `matching_index` are paired;      ║
+// ║   objects with `matching_index: null` (or no counterpart on the other    ║
+// ║   side) are unpaired and won't participate in sync.                      ║
+// ║                                                                          ║
+// ║   Scoping: matching_index is scoped per-pair and per-object-type.        ║
+// ║   A frame's matching_index:0 only matches a frame (not a textbox), and   ║
+// ║   only within the same pair. Values don't need to be contiguous.         ║
+// ║                                                                          ║
+// ║   If two objects on the same side share a matching_index (authoring      ║
+// ║   mistake), the first one wins and a console warning is emitted.         ║
+// ║                                                                          ║
+// ║   Sync is always one-way: desktop → mobile (copies image data into       ║
+// ║   paired frames and text content into paired textboxes).                 ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const TEMPLATE_PAIRS = [
+  {
+    name: 'Product Page A',
+    desktop: {
+      name: 'Desktop',
+      description: '732×1500 · 10 frames',
+      canvasW: 732,
+      canvasH: 1500,
+      bgColor: '#ffffff',
+      bgImage: null,
+      frames: [
+        // Top banner
+        { x: 0, y: 0, w: 732, h: 314, shape: null, matching_index: 0, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        // Row of 4 square thumbs
+        { x: 0,   y: 353, w: 169, h: 169, shape: null, matching_index: 10,   borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 188, y: 353, w: 169, h: 169, shape: null, matching_index: 11,   borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 376, y: 353, w: 169, h: 169, shape: null, matching_index: 12,   borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 564, y: 353, w: 169, h: 169, shape: null, matching_index: null, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }, // no mobile counterpart
+        // Middle banner
+        { x: 0, y: 561, w: 732, h: 339, shape: null, matching_index: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        // Row of 3 rectangular thumbs
+        { x: 0,   y: 913, w: 236, h: 275, shape: null, matching_index: 20, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 248, y: 913, w: 236, h: 275, shape: null, matching_index: 21, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 497, y: 913, w: 236, h: 275, shape: null, matching_index: 22, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        // Bottom banner
+        { x: 0, y: 1201, w: 732, h: 299, shape: null, matching_index: 2, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+      ],
+      textBoxes: [
+        // Title above middle banner
+        { x: 265, y: 322, width: 202, text: "Product Detail", matching_index: 100, fontName: 'DM Sans', fontSize: 18, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+        // Captions under the 4 row-2 thumbs — first 3 paired, 4th orphan
+        { x: 20,  y: 532, width: 129, text: "Product Detail", matching_index: 110,  fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+        { x: 208, y: 532, width: 129, text: "Product Detail", matching_index: 111,  fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+        { x: 396, y: 532, width: 129, text: "Product Detail", matching_index: 112,  fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+        { x: 584, y: 532, width: 129, text: "Product Detail", matching_index: null, fontName: 'DM Sans', fontSize: 14, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
+      ],
+    },
+    mobile: {
+      name: 'Mobile',
+      description: '600×2250 · 10 frames',
+      canvasW: 600,
+      canvasH: 2250,
+      bgColor: '#ffffff',
+      bgImage: null,
+      frames: [
+        // Top banner
+        { x: 0, y: 0,    w: 600, h: 413, shape: null, matching_index: 0, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        // Row of 3 square thumbs (mobile has 3, desktop had 4)
+        { x: 0,   y: 475, w: 189, h: 205, shape: null, matching_index: 10, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 203, y: 475, w: 189, h: 205, shape: null, matching_index: 11, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 408, y: 475, w: 189, h: 205, shape: null, matching_index: 12, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        // Middle banner
+        { x: 0, y: 742, w: 600, h: 417, shape: null, matching_index: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        // Grid of 4 rectangular thumbs — 3 paired with desktop's 3, 4th is mobile-only
+        { x: 0,   y: 1175, w: 290, h: 314, shape: null, matching_index: 20,   borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 305, y: 1175, w: 295, h: 314, shape: null, matching_index: 21,   borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 0,   y: 1506, w: 290, h: 314, shape: null, matching_index: 22,   borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+        { x: 305, y: 1506, w: 295, h: 314, shape: null, matching_index: null, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }, // no desktop counterpart
+        // Bottom banner
+        { x: 0, y: 1836, w: 600, h: 414, shape: null, matching_index: 2, borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+      ],
+      textBoxes: [
+        // Title (single textbox — mobile doesn't split into per-thumb captions the same way)
+        { x: 213, y: 428, width: 175, text: "Product Detail", matching_index: 100, fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'left' },
+        // Captions under the 3 row-a thumbs (paired with desktop captions 110–112)
+        { x: 12,  y: 701, width: 166, text: "Product Detail", matching_index: 110, fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+        { x: 215, y: 701, width: 166, text: "Product Detail", matching_index: 111, fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+        { x: 420, y: 701, width: 166, text: "Product Detail", matching_index: 112, fontName: 'DM Sans', fontSize: 16, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
+      ],
+    },
   },
 ];
+
+// ─── Derive flat TEMPLATES array from pairs ───────────────────────────────
+// Keeps a flat TEMPLATES array so existing call sites still work. Each
+// derived template is tagged with `_pairIndex` and `_viewport`.
+//
+// Predefined frames/textboxes carry their `matching_index` from config.
+// We additionally stamp:
+//   _fromTemplate: true    — distinguishes predefined from user-added
+//   _matchingIndex: N|null — internal mirror of the author's matching_index,
+//                            lives on cfg so it survives JSON-clone in undo
+const TEMPLATES = [];
+TEMPLATE_PAIRS.forEach((pair, pairIdx) => {
+  pair.desktop._pairIndex = pairIdx;
+  pair.desktop._viewport = 'desktop';
+  pair.mobile._pairIndex = pairIdx;
+  pair.mobile._viewport = 'mobile';
+  [pair.desktop, pair.mobile].forEach(tmpl => {
+    (tmpl.frames || []).forEach(f => {
+      f._fromTemplate = true;
+      f._matchingIndex = (typeof f.matching_index === 'number') ? f.matching_index : null;
+    });
+    (tmpl.textBoxes || []).forEach(tb => {
+      tb._fromTemplate = true;
+      tb._matchingIndex = (typeof tb.matching_index === 'number') ? tb.matching_index : null;
+    });
+  });
+  TEMPLATES.push(pair.desktop);
+  TEMPLATES.push(pair.mobile);
+});
+
+// Helpers: look up the template index for a given (pair, viewport).
+function getTemplateIndex(pairIdx, viewport) {
+  const tmpl = viewport === 'mobile'
+    ? TEMPLATE_PAIRS[pairIdx].mobile
+    : TEMPLATE_PAIRS[pairIdx].desktop;
+  return TEMPLATES.indexOf(tmpl);
+}
+function getActivePairIndex() {
+  if (activeTemplateIndex < 0) return -1;
+  return TEMPLATES[activeTemplateIndex]._pairIndex;
+}
+function getActiveViewport() {
+  if (activeTemplateIndex < 0) return 'desktop';
+  return TEMPLATES[activeTemplateIndex]._viewport;
+}
 
 const FRAME_BORDER_WIDTH = 1.5;
 const FRAME_BORDER_COLOR = 'rgba(255, 255, 255, 0.36)';
@@ -3161,22 +3430,69 @@ const canvasArea    = document.getElementById('canvasArea');
 const zoomDisplay   = document.getElementById('zoomDisplay');
 const selectedLabel = document.getElementById('selectedLabel');
 
+// ─── Sidebar: one tab per PAIR (not per template) ────────────────────────
+// Each pair remembers which viewport (desktop/mobile) was last active on it.
+// Clicking a tab restores that pair at its last viewport.
+// Array index === pair index.
+const pairLastViewport = TEMPLATE_PAIRS.map(() => 'desktop');
 const tabButtons = [];
-TEMPLATES.forEach((tmpl, idx) => {
+TEMPLATE_PAIRS.forEach((pair, pairIdx) => {
   const btn = document.createElement('button');
   btn.className = 'tab-btn';
-  btn.innerHTML = `${tmpl.name}<span class="tab-meta">${tmpl.description || ''}</span>`;
-  btn.addEventListener('click', () => switchTemplate(idx));
+  // Use the pair's own name; fall back to the desktop template name for legacy pairs.
+  const pairName = pair.name || pair.desktop.name || `Template ${pairIdx + 1}`;
+  const desc = pair.desktop.description || '';
+  btn.innerHTML = `${pairName}<span class="tab-meta">${desc}</span>`;
+  btn.addEventListener('click', () => {
+    const viewport = pairLastViewport[pairIdx];
+    const tmplIdx = getTemplateIndex(pairIdx, viewport);
+    switchTemplate(tmplIdx);
+  });
   sidebar.appendChild(btn);
   tabButtons.push(btn);
 });
+
+// ─── Viewport toggle wiring ──────────────────────────────────────────────
+const viewportToggleEl = document.getElementById('viewportToggle');
+const viewportDesktopBtn = document.getElementById('viewportDesktopBtn');
+const viewportMobileBtn = document.getElementById('viewportMobileBtn');
+
+function updateViewportToggleUI() {
+  const vp = getActiveViewport();
+  viewportDesktopBtn.classList.toggle('active', vp === 'desktop');
+  viewportMobileBtn.classList.toggle('active', vp === 'mobile');
+}
+
+function selectViewport(targetViewport) {
+  if (activeTemplateIndex < 0) return;
+  const pairIdx = getActivePairIndex();
+  const currentViewport = getActiveViewport();
+  if (currentViewport === targetViewport) return;
+
+  // Desktop → Mobile is the only direction that triggers sync.
+  if (currentViewport === 'desktop' && targetViewport === 'mobile') {
+    syncDesktopToMobile(pairIdx);
+  }
+
+  pairLastViewport[pairIdx] = targetViewport;
+  const targetIdx = getTemplateIndex(pairIdx, targetViewport);
+  switchTemplate(targetIdx);
+}
+
+viewportDesktopBtn.addEventListener('click', () => selectViewport('desktop'));
+viewportMobileBtn.addEventListener('click', () => selectViewport('mobile'));
 
 function switchTemplate(idx) {
   if (idx === activeTemplateIndex) return;
 
   cancelInteractions();
 
-  tabButtons.forEach((b, i) => b.classList.toggle('active', i === idx));
+  // Highlight the tab for the PAIR this template belongs to.
+  const newPairIdx = TEMPLATES[idx]._pairIndex;
+  tabButtons.forEach((b, i) => b.classList.toggle('active', i === newPairIdx));
+  // Remember which viewport the pair is now on.
+  pairLastViewport[newPairIdx] = TEMPLATES[idx]._viewport;
+
   activeTemplateIndex = idx;
 
   const tmpl = TEMPLATES[idx];
@@ -3228,6 +3544,7 @@ function switchTemplate(idx) {
   });
 
   updateLabel();
+  updateViewportToggleUI();
 }
 
 function cancelInteractions() {
@@ -4979,6 +5296,9 @@ function createTextBox(x, y) {
     align: 'left',
     el: null,
     contentEl: null,
+    // User-added textboxes never participate in desktop→mobile sync.
+    _fromTemplate: false,
+    _matchingIndex: null,
   };
 
   const el = document.createElement('div');
@@ -5429,6 +5749,14 @@ function createTextBoxFromConfig(state, cfg) {
     align: cfg.align || 'left',
     el: null,
     contentEl: null,
+    // Sync tags carried from the template config (if any).
+    // Read `_matchingIndex` (stamped at derivation) with fallback to
+    // `matching_index` for configs restored from snapshots before derivation.
+    _fromTemplate: !!cfg._fromTemplate,
+    _matchingIndex:
+      (typeof cfg._matchingIndex === 'number') ? cfg._matchingIndex :
+      (typeof cfg.matching_index === 'number') ? cfg.matching_index :
+      null,
   };
 
   const el = document.createElement('div');
@@ -6857,19 +7185,72 @@ switchTemplate(0);
 // ╚══════════════════════════════════════════════════════════════════════════╝
 document.getElementById('saveTemplateBtn').addEventListener('click', () => {
   const state = templateStates[activeTemplateIndex];
-  
-  // 1. Format Frames (Accurately capturing live border states)
-  const framesStr = state.cells.map(c => {
+
+  // ─── Reading-order sort: left-to-right, top-to-bottom ──────────────
+  // Items on the "same row" (vertically overlapping) are ordered by x.
+  // A new row starts once an item's top is below the running row's bottom.
+  // This matches visual reading order better than a naive (y, x) lexicographic
+  // sort, which would misorder items that look aligned but have slightly
+  // different y values.
+  function sortReadingOrder(items) {
+    // items: array of { item, top, bottom, left }
+    const sorted = [...items].sort((a, b) => a.top - b.top || a.left - b.left);
+    const rows = [];
+    let currentRow = null;
+    let currentRowBottom = -Infinity;
+    sorted.forEach(entry => {
+      if (!currentRow || entry.top >= currentRowBottom) {
+        // New row: this item starts below every item in the previous row.
+        currentRow = [entry];
+        rows.push(currentRow);
+        currentRowBottom = entry.bottom;
+      } else {
+        // Same row: vertically overlaps the running row.
+        currentRow.push(entry);
+        // Extend the row's bottom to the max so far, so subsequent items
+        // that overlap any row member are still grouped with this row.
+        if (entry.bottom > currentRowBottom) currentRowBottom = entry.bottom;
+      }
+    });
+    // Within each row, sort left→right.
+    return rows.flatMap(row => row.sort((a, b) => a.left - b.left).map(e => e.item));
+  }
+
+  // 1. Format Frames — sorted in reading order
+  const frameEntries = state.cells.map(c => ({
+    item: c,
+    top: c.cfg.y,
+    bottom: c.cfg.y + c.cfg.h,
+    left: c.cfg.x,
+  }));
+  const sortedCells = sortReadingOrder(frameEntries);
+  const framesStr = sortedCells.map(c => {
     const cfg = c.cfg;
     const shapeStr = cfg.shape ? `'${cfg.shape}'` : 'null';
-    return `      { x: ${Math.round(cfg.x)}, y: ${Math.round(cfg.y)}, w: ${Math.round(cfg.w)}, h: ${Math.round(cfg.h)}, shape: ${shapeStr}, label: '${cfg.label || 'Frame'}', borderEnabled: ${c.borderEnabled}, borderColor: '${c.borderColor}', borderWidth: ${c.borderWidth} }`;
+    const miStr = (typeof cfg._matchingIndex === 'number') ? cfg._matchingIndex : 'null';
+    return `      { x: ${Math.round(cfg.x)}, y: ${Math.round(cfg.y)}, w: ${Math.round(cfg.w)}, h: ${Math.round(cfg.h)}, shape: ${shapeStr}, matching_index: ${miStr}, borderEnabled: ${c.borderEnabled}, borderColor: '${c.borderColor}', borderWidth: ${c.borderWidth} }`;
   }).join(',\n');
 
-  // 2. Format TextBoxes
-  const textBoxesStr = (state.textBoxes || []).map(tb => {
+  // 2. Format TextBoxes — sorted in reading order
+  // Textbox height isn't stored; estimate from font size × line count using a
+  // 1.3 line-height factor (matches drawTextBoxToCanvas). Good enough for row
+  // grouping; exact height isn't needed since we only compare overlap.
+  const tbEntries = (state.textBoxes || []).map(tb => {
+    const lineCount = Math.max(1, (tb.text || '').split(/<br\s*\/?>|<\/div><div>|<div>|\n/).length);
+    const estHeight = tb.fontSize * 1.3 * lineCount;
+    return {
+      item: tb,
+      top: tb.y,
+      bottom: tb.y + estHeight,
+      left: tb.x,
+    };
+  });
+  const sortedTbs = sortReadingOrder(tbEntries);
+  const textBoxesStr = sortedTbs.map(tb => {
     const safeText = JSON.stringify(tb.text); 
     const w = tb.width ? Math.round(tb.width) : 'null';
-    return `      { x: ${Math.round(tb.x)}, y: ${Math.round(tb.y)}, width: ${w}, text: ${safeText}, fontName: '${tb.fontName}', fontSize: ${tb.fontSize}, fontColor: '${tb.fontColor}', bold: ${tb.bold}, italic: ${tb.italic}, underline: ${tb.underline}, align: '${tb.align}' }`;
+    const miStr = (typeof tb._matchingIndex === 'number') ? tb._matchingIndex : 'null';
+    return `      { x: ${Math.round(tb.x)}, y: ${Math.round(tb.y)}, width: ${w}, text: ${safeText}, matching_index: ${miStr}, fontName: '${tb.fontName}', fontSize: ${tb.fontSize}, fontColor: '${tb.fontColor}', bold: ${tb.bold}, italic: ${tb.italic}, underline: ${tb.underline}, align: '${tb.align}' }`;
   }).join(',\n');
 
   // 3. Assemble the full template object string
