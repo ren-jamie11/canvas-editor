@@ -544,6 +544,14 @@
   .rs-tool-btn svg { flex-shrink: 0; opacity: 0.6; }
   .rs-tool-btn.active svg { opacity: 1; }
 
+  /* Distribute buttons — disabled state */
+  .rs-distribute-btn { flex: 1; justify-content: center; font-size: 11px; padding: 7px 6px; }
+  .rs-distribute-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
   /* Text formatting controls */
   .rs-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
   .rs-row.wrap { flex-wrap: wrap; }
@@ -920,6 +928,7 @@
   .equidistance-indicator.eq-v::before { top: 0; }
   .equidistance-indicator.eq-v::after { bottom: 0; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
@@ -961,7 +970,7 @@
     <b>Ctrl+Z</b> Undo · <b>Ctrl+Y</b> Redo
   </div>
 
-  <button id="downloadBtn" class="download-btn">Download Canvas (PNG)</button>
+  <button id="downloadBtn" class="download-btn">Download Canvas (ZIP)</button>
 </div>
 
 <div class="right-sidebar" id="rightSidebar">
@@ -1054,6 +1063,28 @@
         <option value="4.5">4½ pt</option>
         <option value="6">6 pt</option>
       </select>
+    </div>
+  </div>
+
+  <div class="rs-section" id="alignSection">
+    <div class="rs-section-title">Align</div>
+    <div class="rs-row" style="gap: 6px;">
+      <button class="rs-tool-btn rs-distribute-btn" id="distributeHBtn" disabled title="Distribute horizontally — equalize horizontal gaps between selected objects">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="4" x2="3" y2="20"/>
+          <line x1="21" y1="4" x2="21" y2="20"/>
+          <rect x="8" y="7" width="8" height="10" rx="1"/>
+        </svg>
+        Distribute H
+      </button>
+      <button class="rs-tool-btn rs-distribute-btn" id="distributeVBtn" disabled title="Distribute vertically — equalize vertical gaps between selected objects">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="4" y1="3" x2="20" y2="3"/>
+          <line x1="4" y1="21" x2="20" y2="21"/>
+          <rect x="7" y="8" width="10" height="8" rx="1"/>
+        </svg>
+        Distribute V
+      </button>
     </div>
   </div>
 </div>
@@ -1293,34 +1324,34 @@ const SHAPES = {
 };
 
 const TEMPLATES = [
-  {
-  name: 'Custom Template 1 (Scaled 50%)',
-  description: '732×1500 · 10 frames',
-  canvasW: 732,
-  canvasH: 1500,
-  bgColor: '#ffffff',
-  bgImage: null,
-  frames: [
-    { x: 0, y: 0, w: 732, h: 313.5, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 0, y: 1201, w: 732, h: 299, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 0, y: 571.5, w: 732, h: 339, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 0, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 0, y: 917.5, w: 235.5, h: 274.5, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 496.5, y: 917.5, w: 235.5, h: 274.5, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 248.5, y: 917.5, w: 235.5, h: 274.5, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 187.5, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 376, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
-    { x: 563.5, y: 361, w: 168.5, h: 168.5, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
-  ],
-  textBoxes: [
-    { x: 265.5, y: 324.5, width: 201.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 18, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-    { x: 20, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-    { x: 207.5, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-    { x: 396, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
-    { x: 583.5, y: 544, width: 128.5, text: "Product Detail", fontName: 'DM Sans', fontSize: 14, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' }
-  ]
+     {
+    name: 'Custom Template',
+    description: '1464×3000 · 10 frames',
+    canvasW: 1464,
+    canvasH: 3000,
+    bgColor: '#ffffff',
+    bgImage: null,
+    frames: [
+      { x: 0, y: 0, w: 1464, h: 587, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 2410, w: 1464, h: 590, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1187, w: 1464, h: 650, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 722, w: 337, h: 337, shape: null, label: 'square', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 0, y: 1847, w: 471, h: 549, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 993, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 497, y: 1847, w: 471, h: 549, shape: null, label: 'square copy copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 375, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 752, y: 722, w: 337, h: 337, shape: null, label: 'square copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 },
+      { x: 1127, y: 722, w: 337, h: 337, shape: null, label: 'square copy copy', borderEnabled: false, borderColor: '#ffffff', borderWidth: 1 }
+    ],
+    textBoxes: [
+      { x: 531, y: 637, width: 403, text: "Product Detail", fontName: 'DM Sans', fontSize: 36, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 40, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 415, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' },
+      { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 24, fontColor: '#000000', bold: false, italic: false, underline: false, align: 'center' }
+    ],
   },
-  {
+    {
     name: 'Custom Template 1',
     description: '1464×3000 · 10 frames',
     canvasW: 1464,
@@ -1346,7 +1377,7 @@ const TEMPLATES = [
       { x: 792, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' },
       { x: 1167, y: 1088, width: 257, text: "Product Detail", fontName: 'DM Sans', fontSize: 28, fontColor: '#502b11', bold: false, italic: false, underline: false, align: 'center' }
     ],
-  }
+  },
 ];
 
 const FRAME_BORDER_WIDTH = 1.5;
@@ -1504,7 +1535,7 @@ const EQUIDISTANCE_MAX_DISTANCE = 500; // disable if either gap exceeds this
 // perpendicular to the alignment line (Y-gap for vertical-center alignment,
 // X-gap for horizontal-center alignment). Objects farther apart than this
 // don't snap/guide on centers.
-const CENTER_ALIGN_MAX_DISTANCE = 600;
+const CENTER_ALIGN_MAX_DISTANCE = 800;
 
 let activeGuideHs = [];
 let activeGuideVs = [];
@@ -3043,7 +3074,18 @@ function createCell(state, tmpl, cfg, i) {
       e.preventDefault();
       e.stopPropagation();
       cellState.lastClickTime = 0;
-      cellState.fileInput.click();
+
+      // If multiple empty frames are selected (including this one),
+      // open the bulk uploader in selection-aware mode so the user can
+      // upload one image per selected empty frame.
+      const emptySelected = getSelectedEmptyFrameIndices();
+      if (emptySelected.length > 1) {
+        bulkUploadTargetIndices = emptySelected;
+        bulkFileInput.click();
+      } else {
+        // Single empty frame — classic per-cell upload.
+        cellState.fileInput.click();
+      }
       return;
     }
 
@@ -3654,7 +3696,7 @@ window.addEventListener('mousemove', (e) => {
     cells.forEach(c => c.el.classList.remove('swap-target'));
     if (targetCell) {
       const tIdx = parseInt(targetCell.dataset.index);
-      if (tIdx !== swapSourceIdx && cells[tIdx].loaded) {
+      if (tIdx !== swapSourceIdx) {
         swapTargetIdx = tIdx;
         targetCell.classList.add('swap-target');
       } else {
@@ -3913,7 +3955,7 @@ window.addEventListener('mouseup', (e) => {
   hasSavedForThisDrag = false; 
 
   if (swapping && swapSourceIdx >= 0) {
-    if (swapTargetIdx >= 0 && swapTargetIdx !== swapSourceIdx && cells[swapTargetIdx].loaded) {
+    if (swapTargetIdx >= 0 && swapTargetIdx !== swapSourceIdx) {
       performSwap(swapSourceIdx, swapTargetIdx);
     }
     cells.forEach(c => c.el.classList.remove('swap-source', 'swap-target', 'swapping'));
@@ -4114,7 +4156,32 @@ window.addEventListener('mouseup', (e) => {
 const bulkUploadBtn = document.getElementById('bulkUploadBtn');
 const bulkFileInput = document.getElementById('bulkFileInput');
 
+// Returns indices of selected frames that have no image, sorted in
+// left-to-right, top-to-bottom reading order.
+function getSelectedEmptyFrameIndices() {
+  const indices = [];
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (s && !s.loaded) indices.push(idx);
+  });
+  // Sort: primary by Y (top-to-bottom), secondary by X (left-to-right).
+  indices.sort((a, b) => {
+    const dy = cells[a].cfg.y - cells[b].cfg.y;
+    return dy !== 0 ? dy : cells[a].cfg.x - cells[b].cfg.x;
+  });
+  return indices;
+}
+
+// Track whether the current bulk-upload interaction is selection-aware.
+let bulkUploadTargetIndices = null; // null = old behaviour; array = targeted
+
 bulkUploadBtn.addEventListener('click', () => {
+  const emptySelected = getSelectedEmptyFrameIndices();
+  if (emptySelected.length > 0) {
+    bulkUploadTargetIndices = emptySelected;
+  } else {
+    bulkUploadTargetIndices = null; // fall back to legacy fill-all-empty
+  }
   bulkFileInput.click();
 });
 
@@ -4124,24 +4191,44 @@ bulkFileInput.addEventListener('change', (e) => {
   saveState();
 
   const state = templateStates[activeTemplateIndex];
-  let fileIdx = 0;
 
-  for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
-    if (!cells[i].loaded) {
-      loadFileIntoCellState(files[fileIdx], cells[i], state, i);
-      fileIdx++;
+  if (bulkUploadTargetIndices && bulkUploadTargetIndices.length > 0) {
+    // Selection-aware upload: fill only the targeted empty frames, up to
+    // min(files.length, targets.length). First N files go to the first N
+    // target frames in reading order.
+    const limit = Math.min(files.length, bulkUploadTargetIndices.length);
+    for (let j = 0; j < limit; j++) {
+      const idx = bulkUploadTargetIndices[j];
+      loadFileIntoCellState(files[j], cells[idx], state, idx);
     }
-  }
+  } else {
+    // Legacy behaviour: fill all empty frames in canvas order, then
+    // overwrite loaded frames if files remain. Only use the first N files
+    // where N = number of empty frames on the canvas (per the spec: user
+    // uploads are limited to available empty slots when nothing is selected
+    // too — "First N selected images are uploaded").
+    let fileIdx = 0;
 
-  if (fileIdx < files.length) {
+    // Pass 1: empty frames in canvas order.
     for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
-      if (cells[i].loaded) {
+      if (!cells[i].loaded) {
         loadFileIntoCellState(files[fileIdx], cells[i], state, i);
         fileIdx++;
       }
     }
+
+    // Pass 2 (existing behaviour): if files remain, overwrite loaded frames.
+    if (fileIdx < files.length) {
+      for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
+        if (cells[i].loaded) {
+          loadFileIntoCellState(files[fileIdx], cells[i], state, i);
+          fileIdx++;
+        }
+      }
+    }
   }
 
+  bulkUploadTargetIndices = null;
   e.target.value = '';
 });
 
@@ -4256,85 +4343,95 @@ function getBgDrawParams() {
   return { drawX, drawY, drawW, drawH };
 }
 
+const N_PARTITIONS = 5;
+
+// Renders the full canvas to an offscreen HTMLCanvasElement and returns it.
+// This is the single source of truth for export rendering — both the full
+// image and the partitions are derived from this canvas.
+function renderFullCanvas(includeBackground) {
+  let exportScale = 1;
+  cells.forEach((s) => {
+    if (s.loaded && s.scale > 0) {
+      exportScale = Math.max(exportScale, 1 / s.scale);
+    }
+  });
+  const maxDim = Math.max(CANVAS_W, CANVAS_H);
+  exportScale = Math.min(exportScale, 8192 / maxDim);
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = Math.round(CANVAS_W * exportScale);
+  canvas.height = Math.round(CANVAS_H * exportScale);
+  const ctx = canvas.getContext('2d');
+
+  ctx.scale(exportScale, exportScale);
+
+  ctx.fillStyle = CANVAS_BG_COLOR;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  if (includeBackground) {
+    const bgP = getBgDrawParams();
+    const state = templateStates[activeTemplateIndex];
+    if (bgP) ctx.drawImage(state.bgImg, bgP.drawX, bgP.drawY, bgP.drawW, bgP.drawH);
+  }
+
+  cells.forEach((s) => {
+    const cfg = s.cfg;
+    const sp = getScaledPath(cfg);
+
+    ctx.save();
+    ctx.translate(cfg.x, cfg.y);
+
+    if (sp) {
+      ctx.clip(new Path2D(sp));
+    } else {
+      ctx.beginPath();
+      ctx.rect(0, 0, cfg.w, cfg.h);
+      ctx.clip();
+    }
+
+    if (s.loaded) {
+      ctx.fillStyle = '#141417';
+      ctx.fillRect(0, 0, cfg.w, cfg.h);
+    }
+
+    if (s.loaded && s.img.naturalWidth > 0) {
+      ctx.translate(s.posX, s.posY);
+      ctx.scale(s.scale, s.scale);
+      ctx.drawImage(s.img, 0, 0);
+    }
+    ctx.restore();
+
+    if (s.borderEnabled && s.borderWidth > 0) {
+      ctx.save();
+      ctx.translate(cfg.x, cfg.y);
+      ctx.strokeStyle = s.borderColor;
+      ctx.lineWidth = s.borderWidth;
+      if (sp) {
+        ctx.lineWidth = s.borderWidth * 2; 
+        ctx.clip(new Path2D(sp));
+        ctx.stroke(new Path2D(sp));
+      } else {
+        const hw = s.borderWidth / 2;
+        ctx.strokeRect(hw, hw, cfg.w - s.borderWidth, cfg.h - s.borderWidth);
+      }
+      ctx.restore();
+    }
+  });
+
+  const state = templateStates[activeTemplateIndex];
+  if (state.textBoxes) {
+    state.textBoxes.forEach(tb => {
+      drawTextBoxToCanvas(ctx, tb);
+    });
+  }
+
+  return canvas;
+}
+
 function generateCanvasBlob(includeBackground) {
   return new Promise((resolve, reject) => {
     try {
-      let exportScale = 1;
-      cells.forEach((s) => {
-        if (s.loaded && s.scale > 0) {
-          exportScale = Math.max(exportScale, 1 / s.scale);
-        }
-      });
-      const maxDim = Math.max(CANVAS_W, CANVAS_H);
-      exportScale = Math.min(exportScale, 8192 / maxDim);
-
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(CANVAS_W * exportScale);
-      canvas.height = Math.round(CANVAS_H * exportScale);
-      const ctx = canvas.getContext('2d');
-
-      ctx.scale(exportScale, exportScale);
-
-      ctx.fillStyle = CANVAS_BG_COLOR;
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-      if (includeBackground) {
-        const bgP = getBgDrawParams();
-        const state = templateStates[activeTemplateIndex];
-        if (bgP) ctx.drawImage(state.bgImg, bgP.drawX, bgP.drawY, bgP.drawW, bgP.drawH);
-      }
-
-      cells.forEach((s) => {
-        const cfg = s.cfg;
-        const sp = getScaledPath(cfg);
-
-        ctx.save();
-        ctx.translate(cfg.x, cfg.y);
-
-        if (sp) {
-          ctx.clip(new Path2D(sp));
-        } else {
-          ctx.beginPath();
-          ctx.rect(0, 0, cfg.w, cfg.h);
-          ctx.clip();
-        }
-
-        if (s.loaded) {
-          ctx.fillStyle = '#141417';
-          ctx.fillRect(0, 0, cfg.w, cfg.h);
-        }
-
-        if (s.loaded && s.img.naturalWidth > 0) {
-          ctx.translate(s.posX, s.posY);
-          ctx.scale(s.scale, s.scale);
-          ctx.drawImage(s.img, 0, 0);
-        }
-        ctx.restore();
-
-        if (s.borderEnabled && s.borderWidth > 0) {
-          ctx.save();
-          ctx.translate(cfg.x, cfg.y);
-          ctx.strokeStyle = s.borderColor;
-          ctx.lineWidth = s.borderWidth;
-          if (sp) {
-            ctx.lineWidth = s.borderWidth * 2; 
-            ctx.clip(new Path2D(sp));
-            ctx.stroke(new Path2D(sp));
-          } else {
-            const hw = s.borderWidth / 2;
-            ctx.strokeRect(hw, hw, cfg.w - s.borderWidth, cfg.h - s.borderWidth);
-          }
-          ctx.restore();
-        }
-      });
-
-      const state = templateStates[activeTemplateIndex];
-      if (state.textBoxes) {
-        state.textBoxes.forEach(tb => {
-          drawTextBoxToCanvas(ctx, tb);
-        });
-      }
-
+      const canvas = renderFullCanvas(includeBackground);
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
         else reject(new Error('Blob generation failed.'));
@@ -5721,6 +5818,9 @@ function syncFormatUIToSelection() {
     const s = cells[firstIdx];
     if (s) updateColorUI(s.borderColor);
   }
+
+  // Keep distribute buttons in sync with selection count.
+  if (typeof updateDistributeButtons === 'function') updateDistributeButtons();
 }
 
 function updateColorUI(color) {
@@ -5907,6 +6007,151 @@ document.getElementById('rsBorderWeight').addEventListener('change', (e) => {
   syncFormatUIToSelection();
 });
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   DISTRIBUTE (EVEN SPACING)                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const distributeHBtn = document.getElementById('distributeHBtn');
+const distributeVBtn = document.getElementById('distributeVBtn');
+
+// Gather rects for all currently selected objects (frames + text boxes).
+// Returns array of { kind, key, L, T, R, B, obj } sorted by left (or top
+// for vertical distribute).
+function getSelectedObjectRects() {
+  const rects = [];
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (!s) return;
+    rects.push({
+      kind: 'frame', key: idx,
+      L: s.cfg.x, T: s.cfg.y,
+      R: s.cfg.x + s.cfg.w, B: s.cfg.y + s.cfg.h,
+      obj: s,
+    });
+  });
+  selectedTextBoxIds.forEach(tbId => {
+    const tb = getTextBoxById(tbId);
+    if (!tb) return;
+    const w = tb.width || tb.contentEl.offsetWidth;
+    const h = tb.contentEl.offsetHeight;
+    rects.push({
+      kind: 'tb', key: tbId,
+      L: tb.x, T: tb.y,
+      R: tb.x + w, B: tb.y + h,
+      obj: tb,
+    });
+  });
+  return rects;
+}
+
+function distributeHorizontally() {
+  const rects = getSelectedObjectRects();
+  if (rects.length < 2) return;
+  saveState();
+
+  // Sort left-to-right by left edge (tie-break by center).
+  rects.sort((a, b) => a.L - b.L || (a.L + a.R) / 2 - (b.L + b.R) / 2);
+
+  // Total width consumed by objects themselves.
+  const totalObjWidth = rects.reduce((s, r) => s + (r.R - r.L), 0);
+  // Available span from leftmost left edge to rightmost right edge.
+  const spanLeft = rects[0].L;
+  const spanRight = rects[rects.length - 1].R;
+  const totalSpan = spanRight - spanLeft;
+  // Total gap to distribute evenly among (n − 1) intervals.
+  const totalGap = totalSpan - totalObjWidth;
+  const gap = totalGap / (rects.length - 1);
+
+  // Place each object: the leftmost stays put; subsequent objects are
+  // positioned so that the gap between the previous right edge and this
+  // left edge equals `gap`.
+  let cursor = spanLeft;
+  rects.forEach((r, i) => {
+    const objW = r.R - r.L;
+    const newL = i === 0 ? r.L : cursor;
+    const dx = newL - r.L;
+
+    if (Math.abs(dx) > 0.001) {
+      if (r.kind === 'frame') {
+        r.obj.cfg.x = newL;
+        r.obj.el.style.left = newL + 'px';
+        syncFrameControls(r.obj);
+      } else {
+        r.obj.x = newL;
+        r.obj.el.style.left = newL + 'px';
+      }
+    }
+    cursor = newL + objW + gap;
+  });
+}
+
+function distributeVertically() {
+  const rects = getSelectedObjectRects();
+  if (rects.length < 2) return;
+  saveState();
+
+  rects.sort((a, b) => a.T - b.T || (a.T + a.B) / 2 - (b.T + b.B) / 2);
+
+  const totalObjHeight = rects.reduce((s, r) => s + (r.B - r.T), 0);
+  const spanTop = rects[0].T;
+  const spanBottom = rects[rects.length - 1].B;
+  const totalSpan = spanBottom - spanTop;
+  const totalGap = totalSpan - totalObjHeight;
+  const gap = totalGap / (rects.length - 1);
+
+  let cursor = spanTop;
+  rects.forEach((r, i) => {
+    const objH = r.B - r.T;
+    const newT = i === 0 ? r.T : cursor;
+    const dy = newT - r.T;
+
+    if (Math.abs(dy) > 0.001) {
+      if (r.kind === 'frame') {
+        r.obj.cfg.y = newT;
+        r.obj.el.style.top = newT + 'px';
+        syncFrameControls(r.obj);
+      } else {
+        r.obj.y = newT;
+        r.obj.el.style.top = newT + 'px';
+      }
+    }
+    cursor = newT + objH + gap;
+  });
+}
+
+distributeHBtn.addEventListener('click', () => {
+  distributeHorizontally();
+});
+distributeVBtn.addEventListener('click', () => {
+  distributeVertically();
+});
+
+// Enable/disable distribute buttons based on selection count.
+function updateDistributeButtons() {
+  const totalSelected = selectedIndices.size + selectedTextBoxIds.size;
+  const enabled = totalSelected >= 2;
+  distributeHBtn.disabled = !enabled;
+  distributeVBtn.disabled = !enabled;
+}
+// Patch into existing selection lifecycle. Called from syncFormatUIToSelection
+// (the function that already runs whenever selection changes) — but that
+// function is defined earlier, so we patch via an observer pattern: override
+// updateLabel which is called on every selection change.
+const _originalUpdateLabel = updateLabel;
+updateLabel = function() {
+  _originalUpdateLabel();
+  updateDistributeButtons();
+};
+// Also update on text-box selection changes. These may not always trigger
+// updateLabel, so hook into the selectTextBox / deselectAll pathway.
+const _originalDeselectAll = deselectAll;
+deselectAll = function() {
+  _originalDeselectAll();
+  updateDistributeButtons();
+};
+// Initialize button state.
+updateDistributeButtons();
+
 window.addEventListener('mousemove', (e) => {
   if (textBoxDupPending && textBoxDupSourceId) {
     const dx = e.clientX - textBoxDupDragStartX;
@@ -6078,22 +6323,63 @@ document.getElementById('downloadBtn').addEventListener('click', async () => {
   btn.disabled = true;
 
   try {
-    let blob;
+    // 1. Render the full canvas once.
+    let fullCanvas;
+    let bgIncluded = true;
     try {
-      blob = await generateCanvasBlob(true);
+      fullCanvas = renderFullCanvas(true);
     } catch (err) {
       console.warn("Canvas Tainted. Exporting without background...", err);
-      blob = await generateCanvasBlob(false);
+      fullCanvas = renderFullCanvas(false);
+      bgIncluded = false;
       alert("Note: Due to strict browser security (CORS) on local files, the background image could not be exported. Your frames were successfully exported instead.\n\nTo include the background image in the future, run this file on a local web server (like Live Server).");
     }
 
-    if (!blob) throw new Error("File generation failed");
+    const fullW = fullCanvas.width;
+    const fullH = fullCanvas.height;
 
-    const url = URL.createObjectURL(blob);
+    // Helper: convert a canvas to a PNG blob (returns a Promise).
+    const canvasToBlob = (cvs) => new Promise((resolve, reject) => {
+      cvs.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Blob generation failed'));
+      }, 'image/png');
+    });
+
+    // 2. Full canvas blob.
+    const fullBlob = await canvasToBlob(fullCanvas);
+
+    // 3. Generate partition blobs.
+    const partHeight = Math.floor(fullH / N_PARTITIONS);
+    const partitionBlobs = [];
+    for (let p = 0; p < N_PARTITIONS; p++) {
+      const sy = p * partHeight;
+      // Last partition absorbs any remainder pixels.
+      const sh = (p === N_PARTITIONS - 1) ? (fullH - sy) : partHeight;
+
+      const partCanvas = document.createElement('canvas');
+      partCanvas.width = fullW;
+      partCanvas.height = sh;
+      const pCtx = partCanvas.getContext('2d');
+      // drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh)
+      pCtx.drawImage(fullCanvas, 0, sy, fullW, sh, 0, 0, fullW, sh);
+      partitionBlobs.push(await canvasToBlob(partCanvas));
+    }
+
+    // 4. Build the zip.
+    const zip = new JSZip();
+    const tmplName = TEMPLATES[activeTemplateIndex].name.replace(/\s+/g, '-').toLowerCase();
+    zip.file(`canvas-${tmplName}.png`, fullBlob);
+    partitionBlobs.forEach((blob, i) => {
+      zip.file(`${i + 1}.png`, blob);
+    });
+
+    // 5. Generate and download the zip.
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(zipBlob);
     const a = document.createElement('a');
     a.href = url;
-    const tmplName = TEMPLATES[activeTemplateIndex].name.replace(/\s+/g, '-').toLowerCase();
-    a.download = `canvas-${tmplName}.png`;
+    a.download = `canvas-${tmplName}.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
