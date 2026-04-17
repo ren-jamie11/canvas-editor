@@ -962,7 +962,7 @@
   <div class="canvas-area" id="canvasArea"></div>
 
   <div class="hint">
-    Click frame to select · <b>Ctrl+Click</b> to multi-select · <b>Drag on canvas</b> to box-select · <b>Delete</b> to remove<br/>
+    Click frame to select · <b>Ctrl+Click</b> to multi-select · <b>Ctrl+Drag</b> to duplicate · <b>Drag on canvas</b> to box-select · <b>Delete</b> to remove<br/>
     Drag to move frames · Scroll to resize frames · <b>Double-click empty frame</b> to upload · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
     <b>Shift+Drag</b> to pan image · <b>Shift+Scroll</b> to zoom image · <b>Ctrl+Drag</b> to duplicate<br/>
     <b>T tool</b>: click canvas to place text · <b>Double-click</b> text to edit · <b>Scroll</b> selected text to resize<br/>
@@ -1245,10 +1245,12 @@ function performUndo() {
   if (!state || !state.undoStack || state.undoStack.length === 0) return;
 
   if (!state.redoStack) state.redoStack = [];
-  state.redoStack.push(captureState(state));
+  const beforeSnap = captureState(state);
+  state.redoStack.push(beforeSnap);
 
   const snap = state.undoStack.pop();
   applyState(activeTemplateIndex, snap);
+  selectAffectedObjects(beforeSnap);
 }
 
 function performRedo() {
@@ -1257,10 +1259,111 @@ function performRedo() {
   if (!state || !state.redoStack || state.redoStack.length === 0) return;
 
   if (!state.undoStack) state.undoStack = [];
-  state.undoStack.push(captureState(state));
+  const beforeSnap = captureState(state);
+  state.undoStack.push(beforeSnap);
 
   const snap = state.redoStack.pop();
   applyState(activeTemplateIndex, snap);
+  selectAffectedObjects(beforeSnap);
+}
+
+// After applyState has restored a snapshot, compare the current (restored)
+// state against beforeSnap (what it looked like right before undo/redo) and
+// select every frame / text box that differs.
+function selectAffectedObjects(beforeSnap) {
+  const state = templateStates[activeTemplateIndex];
+
+  // --- Frames ---
+  const changedFrameIndices = [];
+  const maxFrames = Math.max(state.cells.length, beforeSnap.cells.length);
+  for (let i = 0; i < state.cells.length; i++) {
+    if (i >= beforeSnap.cells.length) {
+      // This frame was added by the undo/redo (it didn't exist before).
+      changedFrameIndices.push(i);
+      continue;
+    }
+    const cur = state.cells[i];
+    const old = beforeSnap.cells[i];
+    if (frameDiffers(cur, old)) {
+      changedFrameIndices.push(i);
+    }
+  }
+  // Frames that existed before but were removed by undo/redo — they're gone,
+  // nothing to select for them.
+
+  // --- Text boxes ---
+  const changedTextBoxIds = [];
+  const curTBs = state.textBoxes || [];
+  const oldTBs = beforeSnap.textBoxes || [];
+
+  // Build a map of old text boxes by id for efficient lookup.
+  const oldTBMap = new Map();
+  oldTBs.forEach(tb => oldTBMap.set(tb.id, tb));
+
+  curTBs.forEach(tb => {
+    const old = oldTBMap.get(tb.id);
+    if (!old) {
+      // This text box was added by undo/redo.
+      changedTextBoxIds.push(tb.id);
+    } else if (textBoxDiffers(tb, old)) {
+      changedTextBoxIds.push(tb.id);
+    }
+  });
+
+  // If nothing changed (e.g. only removals), don't clear selection for nothing.
+  if (changedFrameIndices.length === 0 && changedTextBoxIds.length === 0) return;
+
+  // Select the affected objects.
+  deselectAll();
+  if (changedFrameIndices.length > 0) {
+    changedFrameIndices.forEach(idx => {
+      state.selectedIndices.add(idx);
+      if (cells[idx]) {
+        cells[idx].el.classList.add('selected');
+        cells[idx].controlsEl.classList.add('visible');
+      }
+    });
+    selectedIndices = state.selectedIndices;
+  }
+  changedTextBoxIds.forEach(id => selectTextBox(id));
+  updateLabel();
+  syncFormatUIToSelection();
+}
+
+// Compare a live cell against a snapshot cell to detect meaningful changes.
+function frameDiffers(cur, oldSnap) {
+  // Position / size
+  if (cur.cfg.x !== oldSnap.cfg.x || cur.cfg.y !== oldSnap.cfg.y) return true;
+  if (cur.cfg.w !== oldSnap.cfg.w || cur.cfg.h !== oldSnap.cfg.h) return true;
+  if ((cur.cfg.shape || '') !== (oldSnap.cfg.shape || '')) return true;
+  // Image state
+  if (cur.loaded !== oldSnap.loaded) return true;
+  if (cur.loaded && (cur.img.src !== oldSnap.src)) return true;
+  // Transform
+  if (cur.scale !== oldSnap.scale) return true;
+  if (cur.posX !== oldSnap.posX || cur.posY !== oldSnap.posY) return true;
+  // Border
+  if (cur.borderEnabled !== oldSnap.borderEnabled) return true;
+  if (cur.borderColor !== oldSnap.borderColor) return true;
+  if (cur.borderWidth !== oldSnap.borderWidth) return true;
+  return false;
+}
+
+// Compare a live text box against a snapshot text box.
+function textBoxDiffers(cur, oldSnap) {
+  if (cur.x !== oldSnap.x || cur.y !== oldSnap.y) return true;
+  if (cur.width !== oldSnap.width) return true;
+  // Compare text content (live uses contentEl.innerHTML).
+  const curText = cur.contentEl ? cur.contentEl.innerHTML : cur.text;
+  if (curText !== oldSnap.text) return true;
+  if (cur.fontSize !== oldSnap.fontSize) return true;
+  if (cur.fontName !== oldSnap.fontName) return true;
+  if (cur.fontColor !== oldSnap.fontColor) return true;
+  if (cur.bold !== oldSnap.bold) return true;
+  if (cur.italic !== oldSnap.italic) return true;
+  if (cur.underline !== oldSnap.underline) return true;
+  if (cur.align !== oldSnap.align) return true;
+  return false;
 }
 
 function handleUndoPress() {
@@ -1307,6 +1410,234 @@ window.addEventListener('keyup', (e) => {
   if (e.key === 'Control' || e.key === 'Meta') {
     clearUndoTimers();
     clearRedoTimers();
+  }
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   COPY / CUT / PASTE                                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const PASTE_OFFSET = 20; // px offset per paste
+
+// Internal clipboard: stores snapshots of selected objects.
+// { templateIndex, frames: [...], textBoxes: [...], isCut, pasteCount }
+let internalClipboard = null;
+
+// Snapshot a frame cell for clipboard storage.
+function snapshotFrame(cellState) {
+  const snap = {
+    cfg: JSON.parse(JSON.stringify(cellState.cfg)),
+    loaded: cellState.loaded,
+    src: cellState.img ? cellState.img.src : '',
+    scale: cellState.scale,
+    posX: cellState.posX,
+    posY: cellState.posY,
+    naturalW: cellState.naturalW,
+    naturalH: cellState.naturalH,
+    borderEnabled: cellState.borderEnabled,
+    borderColor: cellState.borderColor,
+    borderWidth: cellState.borderWidth,
+  };
+  // Remove cached scaled path so the clone re-generates it.
+  delete snap.cfg._scaledPath;
+  return snap;
+}
+
+// Snapshot a text box for clipboard storage.
+function snapshotTextBox(tb) {
+  return {
+    x: tb.x,
+    y: tb.y,
+    width: tb.width,
+    text: tb.contentEl ? tb.contentEl.innerHTML : tb.text,
+    fontFamily: tb.fontFamily,
+    fontName: tb.fontName,
+    fontSize: tb.fontSize,
+    fontColor: tb.fontColor,
+    bold: tb.bold,
+    italic: tb.italic,
+    underline: tb.underline,
+    align: tb.align,
+  };
+}
+
+// Paste a frame snapshot onto the canvas and return the new cell index.
+function pasteFrameSnapshot(snap, offsetX, offsetY) {
+  const state = templateStates[activeTemplateIndex];
+  const tmpl = TEMPLATES[activeTemplateIndex];
+
+  const newCfg = JSON.parse(JSON.stringify(snap.cfg));
+  newCfg.x += offsetX;
+  newCfg.y += offsetY;
+  newCfg.label = (newCfg.label || 'Frame') + ' copy';
+  delete newCfg._scaledPath;
+
+  tmpl.frames.push(newCfg);
+  const newIdx = state.cells.length;
+  const newCell = createCell(state, tmpl, newCfg, newIdx);
+  newCell.borderEnabled = snap.borderEnabled;
+  newCell.borderColor = snap.borderColor;
+  newCell.borderWidth = snap.borderWidth;
+  state.cells.push(newCell);
+
+  canvasArea.appendChild(newCell.el);
+  canvasArea.appendChild(newCell.controlsEl);
+
+  applyUserBorder(newCell);
+
+  // If the source had an image, clone it into the new frame.
+  if (snap.loaded && snap.src) {
+    const savedScale = snap.scale;
+    const savedPosX = snap.posX;
+    const savedPosY = snap.posY;
+    const savedNatW = snap.naturalW;
+    const savedNatH = snap.naturalH;
+
+    const freshImg = new Image();
+    freshImg.onload = () => {
+      newCell.naturalW = savedNatW;
+      newCell.naturalH = savedNatH;
+      newCell.loaded = true;
+      newCell.scale = savedScale;
+      newCell.posX = savedPosX;
+      newCell.posY = savedPosY;
+      newCell.el.classList.add('has-image');
+      newCell.img.src = freshImg.src;
+      applyTransformFor(state, newCell._cellIndex);
+    };
+    freshImg.src = snap.src;
+  }
+
+  cells = state.cells;
+  return newIdx;
+}
+
+// Paste a text box snapshot onto the canvas and return the new text box.
+function pasteTextBoxSnapshot(snap, offsetX, offsetY) {
+  const state = templateStates[activeTemplateIndex];
+  const cloneSrc = {
+    x: snap.x + offsetX,
+    y: snap.y + offsetY,
+    width: snap.width,
+    text: snap.text,
+    fontFamily: snap.fontFamily,
+    fontName: snap.fontName,
+    fontSize: snap.fontSize,
+    fontColor: snap.fontColor,
+    bold: snap.bold,
+    italic: snap.italic,
+    underline: snap.underline,
+    align: snap.align,
+  };
+  return cloneTextBox(cloneSrc);
+}
+
+// Perform copy or cut of currently selected objects.
+function copyOrCut(isCut) {
+  if (selectedIndices.size === 0 && selectedTextBoxIds.size === 0) return;
+
+  const frameSnaps = [];
+  selectedIndices.forEach(idx => {
+    const s = cells[idx];
+    if (s) frameSnaps.push({ idx, snap: snapshotFrame(s) });
+  });
+
+  const tbSnaps = [];
+  selectedTextBoxIds.forEach(tbId => {
+    const tb = getTextBoxById(tbId);
+    if (tb) tbSnaps.push(snapshotTextBox(tb));
+  });
+
+  internalClipboard = {
+    templateIndex: activeTemplateIndex,
+    frames: frameSnaps.map(f => f.snap),
+    textBoxes: tbSnaps,
+    isCut: isCut,
+    pasteCount: 0,
+  };
+
+  if (isCut) {
+    saveState();
+    const state = templateStates[activeTemplateIndex];
+    const tmpl = TEMPLATES[activeTemplateIndex];
+
+    // Remove selected text boxes first (doesn't affect cell indexing).
+    [...selectedTextBoxIds].forEach(id => removeTextBox(id));
+
+    // Remove selected frames: first clear images from loaded ones, then
+    // remove the frame elements in reverse index order.
+    const sortedFrameIndices = frameSnaps.map(f => f.idx).sort((a, b) => b - a);
+    sortedFrameIndices.forEach(cellIdx => {
+      const s = cells[cellIdx];
+      if (!s) return;
+      s.el.remove();
+      s.controlsEl.remove();
+      state.cells.splice(cellIdx, 1);
+      tmpl.frames.splice(cellIdx, 1);
+    });
+
+    cells = state.cells;
+    reIndexCells(state);
+    state.selectedIndices.clear();
+    selectedIndices = state.selectedIndices;
+    selectedTextBoxIds.clear();
+    updateLabel();
+    syncFormatUIToSelection();
+  }
+}
+
+// Paste from the internal clipboard.
+function pasteClipboard() {
+  if (!internalClipboard) return;
+  if (internalClipboard.templateIndex !== activeTemplateIndex) return;
+
+  saveState();
+  internalClipboard.pasteCount++;
+  const offset = internalClipboard.pasteCount * PASTE_OFFSET;
+
+  const state = templateStates[activeTemplateIndex];
+  deselectAll();
+
+  // Paste frames.
+  const newFrameIndices = [];
+  internalClipboard.frames.forEach(snap => {
+    const newIdx = pasteFrameSnapshot(snap, offset, offset);
+    newFrameIndices.push(newIdx);
+  });
+
+  // Paste text boxes.
+  const newTextBoxIds = [];
+  internalClipboard.textBoxes.forEach(snap => {
+    const tb = pasteTextBoxSnapshot(snap, offset, offset);
+    newTextBoxIds.push(tb.id);
+  });
+
+  // Select all pasted objects.
+  newFrameIndices.forEach(idx => {
+    state.selectedIndices.add(idx);
+    if (cells[idx]) {
+      cells[idx].el.classList.add('selected');
+      cells[idx].controlsEl.classList.add('visible');
+    }
+  });
+  selectedIndices = state.selectedIndices;
+  newTextBoxIds.forEach(id => selectTextBox(id));
+  updateLabel();
+  syncFormatUIToSelection();
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.contentEditable === 'true') return;
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !e.shiftKey) {
+    e.preventDefault();
+    copyOrCut(false);
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && !e.shiftKey) {
+    e.preventDefault();
+    copyOrCut(true);
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && !e.shiftKey) {
+    e.preventDefault();
+    pasteClipboard();
   }
 });
 
@@ -1404,7 +1735,10 @@ const DEFAULT_FRAME_BORDER_WIDTH = 1;
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 10;
 const ZOOM_STEP = 0.08;
-const IMAGE_RESIZE_SCROLL_TICK = 0.03;
+const IMAGE_RESIZE_SCROLL_TICK = 0.024;
+// Multiplicative zoom factor per scroll tick — gives consistent visual
+// change regardless of image resolution. Each tick scales by ±3%.
+const IMAGE_RESIZE_SCROLL_FACTOR = 0.03;
 
 function scalePath(pathStr, viewBox, frameW, frameH) {
   const [, , vw, vh] = viewBox.split(' ').map(Number);
@@ -3017,6 +3351,11 @@ function createCell(state, tmpl, cfg, i) {
     }
 
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      // Ctrl+Click: start a "pending" interaction.
+      // - If the user drags → duplicate.
+      // - If the user releases without dragging → toggle multi-select.
+      //   (The mouseup handler checks dupCloneIndices.length === 0 to detect
+      //   the no-drag case and toggles selection there.)
       e.preventDefault();
       e.stopPropagation();
 
@@ -3132,7 +3471,9 @@ function createCell(state, tmpl, cfg, i) {
       if (!cellState.loaded) return;
       e.preventDefault();
 
-      const delta = e.deltaY > 0 ? -IMAGE_RESIZE_SCROLL_TICK : IMAGE_RESIZE_SCROLL_TICK;
+      // Multiplicative zoom: each tick scales by a fixed percentage,
+      // so the visual change is consistent regardless of image resolution.
+      const factor = e.deltaY > 0 ? (1 - IMAGE_RESIZE_SCROLL_FACTOR) : (1 + IMAGE_RESIZE_SCROLL_FACTOR);
       const hoveredRect = cell.getBoundingClientRect();
       const mx = e.clientX - hoveredRect.left;
       const my = e.clientY - hoveredRect.top;
@@ -3141,7 +3482,7 @@ function createCell(state, tmpl, cfg, i) {
         const s = cells[idx];
         if (!s || !s.loaded) return;
         const oldScale = s.scale;
-        s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s.scale + delta));
+        s.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s.scale * factor));
 
         if (idx === ci) {
           s.posX = mx - (mx - s.posX) * (s.scale / oldScale);
@@ -4151,6 +4492,22 @@ window.addEventListener('mouseup', (e) => {
     textBoxResizing = false;
     textBoxResizeId = null;
   }
+
+  // Ctrl+Click on text box without dragging: toggle multi-select.
+  // (textBoxDupPending is set on Ctrl+mousedown and cleared on drag
+  // threshold in mousemove. If we reach mouseup with it still true,
+  // the user clicked without dragging → toggle selection.)
+  if (textBoxDupPending && textBoxDupSourceId) {
+    const tbId = textBoxDupSourceId;
+    if (selectedTextBoxIds.has(tbId)) {
+      deselectTextBox(tbId);
+    } else {
+      selectTextBox(tbId);
+    }
+    textBoxDupPending = false;
+    textBoxDupSourceId = null;
+    textBoxDupCloneId = null;
+  }
 });
 
 const bulkUploadBtn = document.getElementById('bulkUploadBtn');
@@ -4442,6 +4799,7 @@ function generateCanvasBlob(includeBackground) {
   });
 }
 
+const DEFAULT_NEW_TEXT_COLOR = '#000000';
 const TEXT_FONTS = [
   { name: 'DM Sans',             family: "'DM Sans', sans-serif" },
   { name: 'Playfair Display',    family: "'Playfair Display', serif" },
@@ -4521,7 +4879,7 @@ function createTextBox(x, y) {
     fontFamily: TEXT_FONTS[0].family,
     fontName: TEXT_FONTS[0].name,
     fontSize: 24,
-    fontColor: '#ffffff',
+    fontColor: DEFAULT_NEW_TEXT_COLOR,
     bold: false,
     italic: false,
     underline: false,
@@ -4689,6 +5047,11 @@ function attachTextBoxEvents(tb) {
     }
 
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      // Ctrl+Click: start a "pending" interaction.
+      // - If the user drags → duplicate.
+      // - If the user releases without dragging → toggle multi-select.
+      //   (The mouseup handler checks textBoxDupPending to detect the
+      //   no-drag case and toggles selection there.)
       e.preventDefault();
       e.stopPropagation();
 
@@ -4966,7 +5329,7 @@ function createTextBoxFromConfig(state, cfg) {
     fontFamily: fontDef.family,
     fontName: fontDef.name,
     fontSize: cfg.fontSize || 24,
-    fontColor: cfg.fontColor || '#ffffff',
+    fontColor: cfg.fontColor || DEFAULT_NEW_TEXT_COLOR,
     bold: !!cfg.bold,
     italic: !!cfg.italic,
     underline: !!cfg.underline,
