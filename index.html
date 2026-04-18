@@ -306,6 +306,7 @@
     user-select: none;
     -webkit-user-drag: none;
     pointer-events: none;
+    will-change: width, height, left, top;
   }
 
   /* User-applied border (rectangular frames) */
@@ -1176,6 +1177,144 @@ let hasSavedForThisDrag = false;
 let scrollSessionTimer = null;
 let isScrollingSession = false;
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   IMAGE OPTIMIZATION                                                     ║
+// ║                                                                          ║
+// ║   Dual-resolution strategy: on upload, large images are downscaled to   ║
+// ║   a display-quality thumbnail (max DISPLAY_MAX_DIM px) for fast UI      ║
+// ║   rendering. The original full-res blob URL is kept for high-quality    ║
+// ║   export. This dramatically cuts GPU memory, compositing cost, and      ║
+// ║   undo/redo overhead.                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const DISPLAY_MAX_DIM = 2048;   // Max px on longest side for display image
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB — resize if file exceeds this
+
+/**
+ * Downscale an image for display if it exceeds DISPLAY_MAX_DIM on any side.
+ * Returns a Promise resolving to { displaySrc, displayW, displayH, originalW, originalH }.
+ * If the image is small enough, displaySrc === the original url (no copy).
+ */
+function createDisplayImage(originalImg, originalUrl) {
+  return new Promise((resolve) => {
+    const ow = originalImg.naturalWidth;
+    const oh = originalImg.naturalHeight;
+    const maxDim = Math.max(ow, oh);
+
+    if (maxDim <= DISPLAY_MAX_DIM) {
+      // Image is small enough — use the original directly.
+      resolve({
+        displaySrc: originalUrl,
+        displayW: ow,
+        displayH: oh,
+        originalW: ow,
+        originalH: oh,
+        needsDownscale: false,
+      });
+      return;
+    }
+
+    // Downscale.
+    const ratio = DISPLAY_MAX_DIM / maxDim;
+    const dw = Math.round(ow * ratio);
+    const dh = Math.round(oh * ratio);
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = dw;
+    offscreen.height = dh;
+    const ctx = offscreen.getContext('2d');
+    ctx.drawImage(originalImg, 0, 0, dw, dh);
+
+    offscreen.toBlob((blob) => {
+      if (!blob) {
+        // Fallback — use original.
+        resolve({
+          displaySrc: originalUrl,
+          displayW: ow,
+          displayH: oh,
+          originalW: ow,
+          originalH: oh,
+          needsDownscale: false,
+        });
+        return;
+      }
+      const displayUrl = URL.createObjectURL(blob);
+      resolve({
+        displaySrc: displayUrl,
+        displayW: dw,
+        displayH: dh,
+        originalW: ow,
+        originalH: oh,
+        needsDownscale: true,
+      });
+    }, 'image/jpeg', 0.92);
+  });
+}
+
+/**
+ * Compress a File if it exceeds MAX_IMAGE_BYTES.
+ * Returns a Promise<string> of a blob URL — either the original (if small) or
+ * a re-encoded JPEG that is ≤ MAX_IMAGE_BYTES.
+ */
+function compressFileIfNeeded(file) {
+  return new Promise((resolve) => {
+    if (file.size <= MAX_IMAGE_BYTES) {
+      resolve(URL.createObjectURL(file));
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+
+      // Iteratively reduce dimensions until the file is under the limit.
+      // Start with a JPEG quality of 0.85 and reduce scale if still too large.
+      const maxAttempts = 5;
+      let scale = 1;
+      let quality = 0.85;
+
+      function attempt(s, q) {
+        const cw = Math.round(w * s);
+        const ch = Math.round(h * s);
+        const c = document.createElement('canvas');
+        c.width = cw;
+        c.height = ch;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, cw, ch);
+        return new Promise((res) => {
+          c.toBlob((blob) => {
+            res(blob);
+          }, 'image/jpeg', q);
+        });
+      }
+
+      (async () => {
+        for (let i = 0; i < maxAttempts; i++) {
+          const blob = await attempt(scale, quality);
+          if (!blob) break;
+          if (blob.size <= MAX_IMAGE_BYTES || i === maxAttempts - 1) {
+            URL.revokeObjectURL(url);
+            resolve(URL.createObjectURL(blob));
+            return;
+          }
+          // Reduce: drop quality first, then scale.
+          if (quality > 0.5) {
+            quality -= 0.15;
+          } else {
+            scale *= 0.75;
+          }
+        }
+        // Fallback — use original.
+        resolve(url);
+      })();
+    };
+    img.onerror = () => resolve(URL.createObjectURL(file));
+    img.src = url;
+  });
+}
+
 function handleScrollStart() {
   if (!isScrollingSession) {
     saveState();
@@ -1202,6 +1341,8 @@ function captureState(state) {
       cfg: JSON.parse(JSON.stringify(c.cfg)),
       loaded: c.loaded,
       src: c.img.src,
+      originalSrc: c.originalSrc || c.img.src,
+      displayScale: c.displayScale || 1,
       scale: c.scale,
       posX: c.posX,
       posY: c.posY,
@@ -1283,6 +1424,8 @@ function applyState(idx, snapshot) {
     cell.borderEnabled = cSnap.borderEnabled;
     cell.borderColor = cSnap.borderColor;
     cell.borderWidth = cSnap.borderWidth;
+    cell.originalSrc = cSnap.originalSrc || cSnap.src;
+    cell.displayScale = cSnap.displayScale || 1;
 
     if (cell.loaded && cSnap.src) {
       cell.img.src = cSnap.src;
@@ -1341,98 +1484,132 @@ function _getMatchingIndex(obj) {
   return (typeof raw === 'number') ? raw : null;
 }
 
-function buildSyncPairs(desktopObjs, mobileObjs, objectTypeLabel) {
-  // Returns [[desktopObj, mobileObj], ...] for predefined objects whose
-  // _matchingIndex values match across sides. User-added objects and any
-  // predefined object with _matchingIndex === null are skipped.
-  const dPredef = (desktopObjs || []).filter(_isFromTemplate);
-  const mPredef = (mobileObjs || []).filter(_isFromTemplate);
 
-  // Build mobile map, first-wins + warn on duplicates.
-  const mByIdx = new Map();
-  mPredef.forEach(m => {
-    const i = _getMatchingIndex(m);
+function buildSyncPairs(sourceObjs, targetObjs, objectTypeLabel) {
+  // Returns [[sourceObj, targetObj], ...] for predefined objects whose
+  // _matchingIndex values match across sides.
+  const sPredef = (sourceObjs || []).filter(_isFromTemplate);
+  const tPredef = (targetObjs || []).filter(_isFromTemplate);
+
+  // Build target map, first-wins + warn on duplicates.
+  const tByIdx = new Map();
+  tPredef.forEach(t => {
+    const i = _getMatchingIndex(t);
     if (i === null) return;
-    if (mByIdx.has(i)) {
-      console.warn(`[sync] duplicate matching_index ${i} on mobile ${objectTypeLabel || ''}; ignoring the later one.`);
+    if (tByIdx.has(i)) {
+      console.warn(`[sync] duplicate matching_index ${i} on target ${objectTypeLabel || ''}; ignoring the later one.`);
       return;
     }
-    mByIdx.set(i, m);
+    tByIdx.set(i, t);
   });
 
-  // Track duplicates on desktop side too.
-  const seenDesktopIdx = new Set();
+  // Track duplicates on source side too.
+  const seenSourceIdx = new Set();
   const pairs = [];
-  dPredef.forEach(d => {
-    const i = _getMatchingIndex(d);
+  sPredef.forEach(s => {
+    const i = _getMatchingIndex(s);
     if (i === null) return;
-    if (seenDesktopIdx.has(i)) {
-      console.warn(`[sync] duplicate matching_index ${i} on desktop ${objectTypeLabel || ''}; ignoring the later one.`);
+    if (seenSourceIdx.has(i)) {
+      console.warn(`[sync] duplicate matching_index ${i} on source ${objectTypeLabel || ''}; ignoring the later one.`);
       return;
     }
-    seenDesktopIdx.add(i);
-    const m = mByIdx.get(i);
-    if (m) pairs.push([d, m]);
+    seenSourceIdx.add(i);
+    const t = tByIdx.get(i);
+    if (t) pairs.push([s, t]);
   });
   return pairs;
 }
 
-function syncDesktopToMobile(pairIdx) {
-  const dIdx = getTemplateIndex(pairIdx, 'desktop');
-  const mIdx = getTemplateIndex(pairIdx, 'mobile');
-  if (dIdx < 0 || mIdx < 0) return;
+function syncViewports(pairIdx, fromViewport, toViewport) {
+  const fromIdx = getTemplateIndex(pairIdx, fromViewport);
+  const toIdx = getTemplateIndex(pairIdx, toViewport);
+  if (fromIdx < 0 || toIdx < 0) return;
 
-  const dState = templateStates[dIdx];
-  if (!dState) return; // Nothing to copy from.
+  const fromState = templateStates[fromIdx];
+  if (!fromState) return; // Nothing to copy from.
 
-  // Lazily init mobile state if the user has never visited it.
-  if (!templateStates[mIdx]) {
-    templateStates[mIdx] = createTemplateState(TEMPLATES[mIdx]);
+  // Lazily init target state if the user has never visited it.
+  if (!templateStates[toIdx]) {
+    templateStates[toIdx] = createTemplateState(TEMPLATES[toIdx]);
   }
-  const mState = templateStates[mIdx];
+  const toState = templateStates[toIdx];
 
-  // Checkpoint mobile so undo can revert this sync.
-  if (!mState.undoStack) mState.undoStack = [];
-  if (!mState.redoStack) mState.redoStack = [];
-  mState.undoStack.push(captureState(mState));
-  if (mState.undoStack.length > 50) mState.undoStack.shift();
-  mState.redoStack = [];
+  // ─── Detect whether the sync will actually change anything ────────
+  // Compare paired frames and textboxes to see if the target already
+  // matches the source. Only if something differs do we push an undo
+  // checkpoint and clear the redo stack.
+  let hasChanges = false;
+
+  const framePairs = buildSyncPairs(fromState.cells, toState.cells, 'frame');
+  for (const [fromCell, toCell] of framePairs) {
+    if (fromCell.loaded !== toCell.loaded) { hasChanges = true; break; }
+    if (fromCell.loaded && fromCell.img.src !== toCell.img.src) { hasChanges = true; break; }
+  }
+
+  if (!hasChanges) {
+    const tbPairs = buildSyncPairs(fromState.textBoxes || [], toState.textBoxes || [], 'textbox');
+    for (const [fromTb, toTb] of tbPairs) {
+      const fromText = fromTb.contentEl ? fromTb.contentEl.innerHTML : fromTb.text;
+      const toText = toTb.contentEl ? toTb.contentEl.innerHTML : toTb.text;
+      if (fromText !== toText) { hasChanges = true; break; }
+    }
+  }
+
+  // If nothing changed, skip — crucially preserving the target's redo stack.
+  if (!hasChanges) return;
+
+  // Checkpoint target so undo can revert this sync.
+  if (!toState.undoStack) toState.undoStack = [];
+  if (!toState.redoStack) toState.redoStack = [];
+  toState.undoStack.push(captureState(toState));
+  if (toState.undoStack.length > 50) toState.undoStack.shift();
+  toState.redoStack = [];
 
   // ─── Frame sync ──────────────────────────────────────────────────────
-  const framePairs = buildSyncPairs(dState.cells, mState.cells, 'frame');
-  framePairs.forEach(([dCell, mCell]) => {
-    const mCellIdx = mState.cells.indexOf(mCell);
-    if (!dCell.loaded) {
-      // Desktop has no image — clear mobile's image to match.
-      mCell.loaded = false;
-      mCell.naturalW = 0;
-      mCell.naturalH = 0;
-      mCell.scale = 1;
-      mCell.posX = 0;
-      mCell.posY = 0;
-      mCell.img.src = '';
-      mCell.el.classList.remove('has-image');
-      if (mCellIdx >= 0) applyTransformFor(mState, mCellIdx);
+  framePairs.forEach(([fromCell, toCell]) => {
+    const toCellIdx = toState.cells.indexOf(toCell);
+    if (!fromCell.loaded) {
+      // Source has no image — clear target's image to match.
+      toCell.loaded = false;
+      toCell.naturalW = 0;
+      toCell.naturalH = 0;
+      toCell.scale = 1;
+      toCell.posX = 0;
+      toCell.posY = 0;
+      toCell.img.src = '';
+      toCell.el.classList.remove('has-image');
+      if (toCellIdx >= 0) applyTransformFor(toState, toCellIdx);
       return;
     }
+
+    // Check if the image source has actually changed
+    const isImageChanging = !toCell.loaded || toCell.img.src !== fromCell.img.src;
+
     // Copy image data.
-    mCell.img.src = dCell.img.src;
-    mCell.naturalW = dCell.naturalW;
-    mCell.naturalH = dCell.naturalH;
-    mCell.loaded = true;
-    mCell.el.classList.add('has-image');
-    // Recompute transform fresh for mobile frame's dimensions (cover-fit, centered).
-    calculateDefaultTransform(mCell);
-    if (mCellIdx >= 0) applyTransformFor(mState, mCellIdx);
+    toCell.img.src = fromCell.img.src;
+    toCell.naturalW = fromCell.naturalW;
+    toCell.naturalH = fromCell.naturalH;
+    toCell.originalSrc = fromCell.originalSrc || fromCell.img.src;
+    toCell.displayScale = fromCell.displayScale || 1;
+    toCell.loaded = true;
+    toCell.el.classList.add('has-image');
+    
+    // Only recompute transform fresh if the source image is newly uploaded or swapped
+    if (isImageChanging) {
+      calculateDefaultTransform(toCell);
+    }
+    
+    if (toCellIdx >= 0) applyTransformFor(toState, toCellIdx);
   });
 
   // ─── Textbox sync (text content only) ────────────────────────────────
-  const tbPairs = buildSyncPairs(dState.textBoxes || [], mState.textBoxes || [], 'textbox');
-  tbPairs.forEach(([dTb, mTb]) => {
-    mTb.text = dTb.text;
-    if (mTb.contentEl) mTb.contentEl.innerHTML = mTb.text;
+  const tbPairs = buildSyncPairs(fromState.textBoxes || [], toState.textBoxes || [], 'textbox');
+  tbPairs.forEach(([fromTb, toTb]) => {
+    toTb.text = fromTb.text;
+    if (toTb.contentEl) toTb.contentEl.innerHTML = toTb.text;
   });
 }
+
 
 function performUndo() {
   if (activeTemplateIndex < 0) return;
@@ -1624,6 +1801,8 @@ function snapshotFrame(cellState) {
     cfg: JSON.parse(JSON.stringify(cellState.cfg)),
     loaded: cellState.loaded,
     src: cellState.img ? cellState.img.src : '',
+    originalSrc: cellState.originalSrc || (cellState.img ? cellState.img.src : ''),
+    displayScale: cellState.displayScale || 1,
     scale: cellState.scale,
     posX: cellState.posX,
     posY: cellState.posY,
@@ -1682,25 +1861,17 @@ function pasteFrameSnapshot(snap, offsetX, offsetY) {
 
   // If the source had an image, clone it into the new frame.
   if (snap.loaded && snap.src) {
-    const savedScale = snap.scale;
-    const savedPosX = snap.posX;
-    const savedPosY = snap.posY;
-    const savedNatW = snap.naturalW;
-    const savedNatH = snap.naturalH;
-
-    const freshImg = new Image();
-    freshImg.onload = () => {
-      newCell.naturalW = savedNatW;
-      newCell.naturalH = savedNatH;
-      newCell.loaded = true;
-      newCell.scale = savedScale;
-      newCell.posX = savedPosX;
-      newCell.posY = savedPosY;
-      newCell.el.classList.add('has-image');
-      newCell.img.src = freshImg.src;
-      applyTransformFor(state, newCell._cellIndex);
-    };
-    freshImg.src = snap.src;
+    newCell.naturalW = snap.naturalW;
+    newCell.naturalH = snap.naturalH;
+    newCell.loaded = true;
+    newCell.scale = snap.scale;
+    newCell.posX = snap.posX;
+    newCell.posY = snap.posY;
+    newCell.originalSrc = snap.originalSrc || snap.src;
+    newCell.displayScale = snap.displayScale || 1;
+    newCell.el.classList.add('has-image');
+    newCell.img.src = snap.src;
+    applyTransformFor(state, newCell._cellIndex);
   }
 
   cells = state.cells;
@@ -3469,10 +3640,8 @@ function selectViewport(targetViewport) {
   const currentViewport = getActiveViewport();
   if (currentViewport === targetViewport) return;
 
-  // Desktop → Mobile is the only direction that triggers sync.
-  if (currentViewport === 'desktop' && targetViewport === 'mobile') {
-    syncDesktopToMobile(pairIdx);
-  }
+  // Sync bidirectionally from the current viewport to the target viewport
+  syncViewports(pairIdx, currentViewport, targetViewport);
 
   pairLastViewport[pairIdx] = targetViewport;
   const targetIdx = getTemplateIndex(pairIdx, targetViewport);
@@ -3673,6 +3842,11 @@ function createCell(state, tmpl, cfg, i) {
     posY: 0,
     loaded: false,
     lastClickTime: 0,
+    // Dual-resolution: originalSrc holds the full-res blob URL for export;
+    // displayScale is the ratio (displayW / originalW) so we can convert
+    // display-space transforms back to original-space for rendering.
+    originalSrc: '',
+    displayScale: 1,
     // Border: auto-enabled when the template specifies borderColor or borderWidth,
     // or when borderEnabled is set explicitly.
     borderEnabled: cfg.borderEnabled !== undefined
@@ -3990,35 +4164,20 @@ function duplicateCell(sourceIdx, newX, newY) {
   state.cells.push(newCell);
 
   if (src.loaded && src.img.naturalWidth > 0) {
-    const snapScale = src.scale;
-    const snapPosX  = src.posX;
-    const snapPosY  = src.posY;
-    const snapNatW  = src.naturalW;
-    const snapNatH  = src.naturalH;
-
-    const offscreen = document.createElement('canvas');
-    offscreen.width  = src.img.naturalWidth;
-    offscreen.height = src.img.naturalHeight;
-    const octx = offscreen.getContext('2d');
-    octx.drawImage(src.img, 0, 0);
-
-    offscreen.toBlob((blob) => {
-      if (!blob) return;
-      const freshURL = URL.createObjectURL(blob);
-      const freshImg = new Image();
-      freshImg.onload = () => {
-        newCell.naturalW = snapNatW;
-        newCell.naturalH = snapNatH;
-        newCell.loaded = true;
-        newCell.scale = snapScale;
-        newCell.posX  = snapPosX;
-        newCell.posY  = snapPosY;
-        newCell.el.classList.add('has-image');
-        newCell.img.src = freshURL;
-        applyTransformFor(state, newCell._cellIndex);
-      };
-      freshImg.src = freshURL;
-    }, 'image/png');
+    // Share the same display and original blob URLs — no need to re-encode
+    // through an offscreen canvas. Blob URLs are reference-counted by the
+    // browser and remain valid as long as at least one reference exists.
+    newCell.naturalW = src.naturalW;
+    newCell.naturalH = src.naturalH;
+    newCell.loaded = true;
+    newCell.scale = src.scale;
+    newCell.posX  = src.posX;
+    newCell.posY  = src.posY;
+    newCell.originalSrc = src.originalSrc || src.img.src;
+    newCell.displayScale = src.displayScale || 1;
+    newCell.el.classList.add('has-image');
+    newCell.img.src = src.img.src;
+    applyTransformFor(state, newCell._cellIndex);
   }
 
   canvasArea.appendChild(newCell.el);
@@ -4290,19 +4449,35 @@ function clampPosition(s) {
   }
 }
 
-function loadFileIntoCellState(file, cellState, state, i) {
-  // Deliberately bypassed URL revocation for robust un-delete and un-swap features
-  const url = URL.createObjectURL(file);
-  cellState.img.onload = () => {
-    cellState.naturalW = cellState.img.naturalWidth;
-    cellState.naturalH = cellState.img.naturalHeight;
-    cellState.loaded = true;
-    calculateDefaultTransform(cellState);
-    cellState.el.classList.add('has-image');
-    applyTransformFor(state, i);
-    deselectAll();
-  };
-  cellState.img.src = url;
+async function loadFileIntoCellState(file, cellState, state, i) {
+  // 1. Compress if the raw file is over MAX_IMAGE_BYTES.
+  const originalUrl = await compressFileIfNeeded(file);
+
+  // 2. Load the (possibly compressed) original to get dimensions.
+  const originalImg = new Image();
+  await new Promise((resolve, reject) => {
+    originalImg.onload = resolve;
+    originalImg.onerror = reject;
+    originalImg.src = originalUrl;
+  });
+
+  // 3. Create a display-resolution version for UI rendering.
+  const info = await createDisplayImage(originalImg, originalUrl);
+
+  cellState.originalSrc = originalUrl;
+  cellState.displayScale = info.needsDownscale
+    ? info.displayW / info.originalW
+    : 1;
+  // naturalW/H are in DISPLAY space — they drive scale/position math.
+  // The display image is what's shown in the <img> element.
+  cellState.naturalW = info.needsDownscale ? info.displayW : info.originalW;
+  cellState.naturalH = info.needsDownscale ? info.displayH : info.originalH;
+  cellState.loaded = true;
+  calculateDefaultTransform(cellState);
+  cellState.el.classList.add('has-image');
+  cellState.img.src = info.displaySrc;
+  applyTransformFor(state, i);
+  deselectAll();
 }
 
 function performSwap(idxA, idxB) {
@@ -4319,7 +4494,7 @@ function performSwap(idxA, idxB) {
   a.img = b.img;
   b.img = tempImg;
 
-  ['loaded', 'naturalW', 'naturalH'].forEach(p => {
+  ['loaded', 'naturalW', 'naturalH', 'originalSrc', 'displayScale'].forEach(p => {
     const tmp = a[p]; a[p] = b[p]; b[p] = tmp;
   });
 
@@ -5027,13 +5202,13 @@ changeBgBtn.addEventListener('click', () => {
   bgFileInput.click();
 });
 
-bgFileInput.addEventListener('change', (e) => {
+bgFileInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   saveState();
 
   const state = templateStates[activeTemplateIndex];
-  const url = URL.createObjectURL(file);
+  const url = await compressFileIfNeeded(file);
 
   const newImg = new Image();
   newImg.onload = () => {
@@ -5115,11 +5290,33 @@ const N_PARTITIONS = 5;
 // Renders the full canvas to an offscreen HTMLCanvasElement and returns it.
 // This is the single source of truth for export rendering — both the full
 // image and the partitions are derived from this canvas.
-function renderFullCanvas(includeBackground) {
+// When cells use downscaled display images, this loads the original full-res
+// sources for maximum export quality.
+async function renderFullCanvas(includeBackground) {
+  // 1. Pre-load any original-resolution images that differ from display images.
+  const exportImages = await Promise.all(cells.map((s) => {
+    if (!s.loaded) return Promise.resolve(null);
+    const origSrc = s.originalSrc || s.img.src;
+    if (origSrc === s.img.src && s.displayScale === 1) {
+      // Already using original — no need to load separately.
+      return Promise.resolve(null);
+    }
+    // Load the original full-res image for export.
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null); // Fallback to display image.
+      img.src = origSrc;
+    });
+  }));
+
   let exportScale = 1;
-  cells.forEach((s) => {
+  cells.forEach((s, idx) => {
     if (s.loaded && s.scale > 0) {
-      exportScale = Math.max(exportScale, 1 / s.scale);
+      // Convert display-space scale to original-space scale for export.
+      const ds = s.displayScale || 1;
+      const originalScale = s.scale * ds;
+      exportScale = Math.max(exportScale, 1 / originalScale);
     }
   });
   const maxDim = Math.max(CANVAS_W, CANVAS_H);
@@ -5141,7 +5338,7 @@ function renderFullCanvas(includeBackground) {
     if (bgP) ctx.drawImage(state.bgImg, bgP.drawX, bgP.drawY, bgP.drawW, bgP.drawH);
   }
 
-  cells.forEach((s) => {
+  cells.forEach((s, idx) => {
     const cfg = s.cfg;
     const sp = getScaledPath(cfg);
 
@@ -5162,9 +5359,22 @@ function renderFullCanvas(includeBackground) {
     }
 
     if (s.loaded && s.img.naturalWidth > 0) {
-      ctx.translate(s.posX, s.posY);
-      ctx.scale(s.scale, s.scale);
-      ctx.drawImage(s.img, 0, 0);
+      const ds = s.displayScale || 1;
+      const exportImg = exportImages[idx];
+      if (exportImg && ds !== 1) {
+        // Use original full-res image. posX/posY are in frame-space pixels
+        // and don't change with image resolution. Only the scale factor
+        // needs adjustment: display-space scale × displayScale gives the
+        // original-space scale that produces the same rendered size.
+        ctx.translate(s.posX, s.posY);
+        ctx.scale(s.scale * ds, s.scale * ds);
+        ctx.drawImage(exportImg, 0, 0);
+      } else {
+        // Display image IS the original (no downscale happened).
+        ctx.translate(s.posX, s.posY);
+        ctx.scale(s.scale, s.scale);
+        ctx.drawImage(s.img, 0, 0);
+      }
     }
     ctx.restore();
 
@@ -5195,17 +5405,13 @@ function renderFullCanvas(includeBackground) {
   return canvas;
 }
 
-function generateCanvasBlob(includeBackground) {
+async function generateCanvasBlob(includeBackground) {
+  const canvas = await renderFullCanvas(includeBackground);
   return new Promise((resolve, reject) => {
-    try {
-      const canvas = renderFullCanvas(includeBackground);
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Blob generation failed.'));
-      }, 'image/png');
-    } catch (error) {
-      reject(error);
-    }
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Blob generation failed.'));
+    }, 'image/png');
   });
 }
 
@@ -7111,10 +7317,10 @@ document.getElementById('downloadBtn').addEventListener('click', async () => {
     let fullCanvas;
     let bgIncluded = true;
     try {
-      fullCanvas = renderFullCanvas(true);
+      fullCanvas = await renderFullCanvas(true);
     } catch (err) {
       console.warn("Canvas Tainted. Exporting without background...", err);
-      fullCanvas = renderFullCanvas(false);
+      fullCanvas = await renderFullCanvas(false);
       bgIncluded = false;
       alert("Note: Due to strict browser security (CORS) on local files, the background image could not be exported. Your frames were successfully exported instead.\n\nTo include the background image in the future, run this file on a local web server (like Live Server).");
     }
