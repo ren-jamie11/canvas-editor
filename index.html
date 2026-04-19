@@ -1027,8 +1027,17 @@
     <span class="zoom-display" id="zoomDisplay"></span>
     <button id="resetBtn">Reset Selected</button>
     <button id="resetAllBtn">Reset All</button>
-    <button id="saveTemplateBtn" style="color: #20c997; border-color: #20c997;">Save Template Code</button>
+    <button id="saveTemplateBtn" style="color: #20c997; border-color: #20c997;">Save Template</button>
   </div>
+
+  <!-- Toast notification for save feedback -->
+  <div id="saveToast" style="
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(80px);
+    padding: 12px 24px; border-radius: 8px; font-family: 'DM Sans', sans-serif;
+    font-size: 13px; font-weight: 500; z-index: 10000; pointer-events: none;
+    opacity: 0; transition: opacity 0.3s, transform 0.3s;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  "></div>
 
   <div class="canvas-area" id="canvasArea"></div>
 
@@ -1191,127 +1200,156 @@ const DISPLAY_MAX_DIM = 2048;   // Max px on longest side for display image
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB — resize if file exceeds this
 
 /**
- * Downscale an image for display if it exceeds DISPLAY_MAX_DIM on any side.
- * Returns a Promise resolving to { displaySrc, displayW, displayH, originalW, originalH }.
- * If the image is small enough, displaySrc === the original url (no copy).
+ * Unified image processing pipeline — replaces the former two-step
+ * compressFileIfNeeded → createDisplayImage chain with a single pass that:
+ *
+ *   1. Decodes the file via createImageBitmap (off-main-thread, fast).
+ *   2. Decides in one shot whether compression and/or display-downscaling
+ *      are needed.
+ *   3. Produces both the original blob URL (for export) and the display
+ *      blob URL (for UI) in the minimum number of canvas draws + toBlob
+ *      calls.
+ *
+ * Returns { originalUrl, displaySrc, displayW, displayH,
+ *           originalW, originalH, needsDownscale }
  */
-function createDisplayImage(originalImg, originalUrl) {
-  return new Promise((resolve) => {
-    const ow = originalImg.naturalWidth;
-    const oh = originalImg.naturalHeight;
-    const maxDim = Math.max(ow, oh);
+async function processImageFile(file) {
+  // Use createImageBitmap for off-main-thread decode when available.
+  const useIB = typeof createImageBitmap === 'function';
 
-    if (maxDim <= DISPLAY_MAX_DIM) {
-      // Image is small enough — use the original directly.
-      resolve({
-        displaySrc: originalUrl,
-        displayW: ow,
-        displayH: oh,
-        originalW: ow,
-        originalH: oh,
-        needsDownscale: false,
-      });
-      return;
-    }
+  // ── Step 1: decode the file ──────────────────────────────────────────
+  let bitmap;            // ImageBitmap (fast path) or HTMLImageElement
+  const rawUrl = URL.createObjectURL(file);
 
-    // Downscale.
-    const ratio = DISPLAY_MAX_DIM / maxDim;
-    const dw = Math.round(ow * ratio);
-    const dh = Math.round(oh * ratio);
+  if (useIB) {
+    bitmap = await createImageBitmap(file);
+  } else {
+    bitmap = new Image();
+    await new Promise((res, rej) => {
+      bitmap.onload = res;
+      bitmap.onerror = rej;
+      bitmap.src = rawUrl;
+    });
+  }
 
-    const offscreen = document.createElement('canvas');
-    offscreen.width = dw;
-    offscreen.height = dh;
-    const ctx = offscreen.getContext('2d');
-    ctx.drawImage(originalImg, 0, 0, dw, dh);
+  const ow = useIB ? bitmap.width : bitmap.naturalWidth;
+  const oh = useIB ? bitmap.height : bitmap.naturalHeight;
 
-    offscreen.toBlob((blob) => {
-      if (!blob) {
-        // Fallback — use original.
-        resolve({
-          displaySrc: originalUrl,
-          displayW: ow,
-          displayH: oh,
-          originalW: ow,
-          originalH: oh,
-          needsDownscale: false,
-        });
-        return;
+  // ── Step 2: decide what work is needed ───────────────────────────────
+  const needsCompress = file.size > MAX_IMAGE_BYTES;
+  const maxDim = Math.max(ow, oh);
+  const needsDisplayDownscale = maxDim > DISPLAY_MAX_DIM;
+
+  // Fast path: small file, small dimensions → no processing at all.
+  if (!needsCompress && !needsDisplayDownscale) {
+    if (useIB) bitmap.close();
+    return {
+      originalUrl: rawUrl,
+      displaySrc: rawUrl,
+      displayW: ow,
+      displayH: oh,
+      originalW: ow,
+      originalH: oh,
+      needsDownscale: false,
+    };
+  }
+
+  // ── Step 3a: build the DISPLAY image ─────────────────────────────────
+  // If the image needs display-downscaling, create a canvas at display
+  // resolution. Otherwise use original dimensions (we still need to
+  // re-encode to compress).
+  const displayRatio = needsDisplayDownscale ? DISPLAY_MAX_DIM / maxDim : 1;
+  const dw = Math.round(ow * displayRatio);
+  const dh = Math.round(oh * displayRatio);
+
+  const displayCanvas = document.createElement('canvas');
+  displayCanvas.width = dw;
+  displayCanvas.height = dh;
+  const dCtx = displayCanvas.getContext('2d');
+  dCtx.drawImage(bitmap, 0, 0, dw, dh);
+
+  const displayBlob = await new Promise(r =>
+    displayCanvas.toBlob(r, 'image/jpeg', 0.92));
+  const displayUrl = displayBlob
+    ? URL.createObjectURL(displayBlob)
+    : rawUrl;
+
+  // ── Step 3b: build the ORIGINAL (compressed) blob URL ────────────────
+  // If the raw file already fits under MAX_IMAGE_BYTES, keep it as-is.
+  // Otherwise, re-encode at full resolution (or progressively smaller)
+  // until it fits.
+  let originalUrl = rawUrl;
+  if (needsCompress) {
+    let scale = 1;
+    let quality = 0.85;
+    const maxAttempts = 5;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      const cw = Math.round(ow * scale);
+      const ch = Math.round(oh * scale);
+      const c = document.createElement('canvas');
+      c.width = cw;
+      c.height = ch;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0, cw, ch);
+      const blob = await new Promise(r =>
+        c.toBlob(r, 'image/jpeg', quality));
+      if (!blob) break;
+      if (blob.size <= MAX_IMAGE_BYTES || i === maxAttempts - 1) {
+        URL.revokeObjectURL(rawUrl);
+        originalUrl = URL.createObjectURL(blob);
+        break;
       }
-      const displayUrl = URL.createObjectURL(blob);
-      resolve({
-        displaySrc: displayUrl,
-        displayW: dw,
-        displayH: dh,
-        originalW: ow,
-        originalH: oh,
-        needsDownscale: true,
-      });
-    }, 'image/jpeg', 0.92);
-  });
+      if (quality > 0.5) quality -= 0.15;
+      else scale *= 0.75;
+    }
+  }
+
+  if (useIB) bitmap.close();   // free GPU memory
+
+  return {
+    originalUrl,
+    displaySrc: displayUrl,
+    displayW: dw,
+    displayH: dh,
+    originalW: ow,
+    originalH: oh,
+    needsDownscale: needsDisplayDownscale,
+  };
 }
 
-/**
- * Compress a File if it exceeds MAX_IMAGE_BYTES.
- * Returns a Promise<string> of a blob URL — either the original (if small) or
- * a re-encoded JPEG that is ≤ MAX_IMAGE_BYTES.
- */
-function compressFileIfNeeded(file) {
-  return new Promise((resolve) => {
-    if (file.size <= MAX_IMAGE_BYTES) {
-      resolve(URL.createObjectURL(file));
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      let w = img.naturalWidth;
-      let h = img.naturalHeight;
-
-      // Iteratively reduce dimensions until the file is under the limit.
-      // Start with a JPEG quality of 0.85 and reduce scale if still too large.
-      const maxAttempts = 5;
-      let scale = 1;
-      let quality = 0.85;
-
-      function attempt(s, q) {
-        const cw = Math.round(w * s);
-        const ch = Math.round(h * s);
-        const c = document.createElement('canvas');
-        c.width = cw;
-        c.height = ch;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0, cw, ch);
-        return new Promise((res) => {
-          c.toBlob((blob) => {
-            res(blob);
-          }, 'image/jpeg', q);
-        });
+/* Legacy wrappers — kept so any remaining single-file call sites still work.
+   They simply delegate to the unified pipeline. */
+async function compressFileIfNeeded(file) {
+  const r = await processImageFile(file);
+  return r.originalUrl;
+}
+function createDisplayImage(originalImg, originalUrl) {
+  const ow = originalImg.naturalWidth || originalImg.width;
+  const oh = originalImg.naturalHeight || originalImg.height;
+  const maxDim = Math.max(ow, oh);
+  if (maxDim <= DISPLAY_MAX_DIM) {
+    return Promise.resolve({
+      displaySrc: originalUrl, displayW: ow, displayH: oh,
+      originalW: ow, originalH: oh, needsDownscale: false,
+    });
+  }
+  const ratio = DISPLAY_MAX_DIM / maxDim;
+  const dw = Math.round(ow * ratio);
+  const dh = Math.round(oh * ratio);
+  const c = document.createElement('canvas');
+  c.width = dw; c.height = dh;
+  c.getContext('2d').drawImage(originalImg, 0, 0, dw, dh);
+  return new Promise(resolve => {
+    c.toBlob(blob => {
+      if (!blob) {
+        resolve({ displaySrc: originalUrl, displayW: ow, displayH: oh,
+                  originalW: ow, originalH: oh, needsDownscale: false });
+        return;
       }
-
-      (async () => {
-        for (let i = 0; i < maxAttempts; i++) {
-          const blob = await attempt(scale, quality);
-          if (!blob) break;
-          if (blob.size <= MAX_IMAGE_BYTES || i === maxAttempts - 1) {
-            URL.revokeObjectURL(url);
-            resolve(URL.createObjectURL(blob));
-            return;
-          }
-          // Reduce: drop quality first, then scale.
-          if (quality > 0.5) {
-            quality -= 0.15;
-          } else {
-            scale *= 0.75;
-          }
-        }
-        // Fallback — use original.
-        resolve(url);
-      })();
-    };
-    img.onerror = () => resolve(URL.createObjectURL(file));
-    img.src = url;
+      resolve({ displaySrc: URL.createObjectURL(blob), displayW: dw, displayH: dh,
+                originalW: ow, originalH: oh, needsDownscale: true });
+    }, 'image/jpeg', 0.92);
   });
 }
 
@@ -4450,28 +4488,15 @@ function clampPosition(s) {
 }
 
 async function loadFileIntoCellState(file, cellState, state, i) {
-  // 1. Compress if the raw file is over MAX_IMAGE_BYTES.
-  const originalUrl = await compressFileIfNeeded(file);
+  // Single-pass pipeline: decode once, produce both original + display URLs.
+  const info = await processImageFile(file);
 
-  // 2. Load the (possibly compressed) original to get dimensions.
-  const originalImg = new Image();
-  await new Promise((resolve, reject) => {
-    originalImg.onload = resolve;
-    originalImg.onerror = reject;
-    originalImg.src = originalUrl;
-  });
-
-  // 3. Create a display-resolution version for UI rendering.
-  const info = await createDisplayImage(originalImg, originalUrl);
-
-  cellState.originalSrc = originalUrl;
+  cellState.originalSrc = info.originalUrl;
   cellState.displayScale = info.needsDownscale
     ? info.displayW / info.originalW
     : 1;
-  // naturalW/H are in DISPLAY space — they drive scale/position math.
-  // The display image is what's shown in the <img> element.
-  cellState.naturalW = info.needsDownscale ? info.displayW : info.originalW;
-  cellState.naturalH = info.needsDownscale ? info.displayH : info.originalH;
+  cellState.naturalW = info.displayW;
+  cellState.naturalH = info.displayH;
   cellState.loaded = true;
   calculateDefaultTransform(cellState);
   cellState.el.classList.add('has-image');
@@ -5127,48 +5152,64 @@ bulkUploadBtn.addEventListener('click', () => {
   bulkFileInput.click();
 });
 
-bulkFileInput.addEventListener('change', (e) => {
+bulkFileInput.addEventListener('change', async (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
   saveState();
 
   const state = templateStates[activeTemplateIndex];
 
+  // Build a list of (file, cellState, cellIndex) assignments first,
+  // then process all files in parallel before applying to cells.
+  const assignments = [];
+
   if (bulkUploadTargetIndices && bulkUploadTargetIndices.length > 0) {
-    // Selection-aware upload: fill only the targeted empty frames, up to
-    // min(files.length, targets.length). First N files go to the first N
-    // target frames in reading order.
     const limit = Math.min(files.length, bulkUploadTargetIndices.length);
     for (let j = 0; j < limit; j++) {
       const idx = bulkUploadTargetIndices[j];
-      loadFileIntoCellState(files[j], cells[idx], state, idx);
+      assignments.push({ file: files[j], cellState: cells[idx], cellIdx: idx });
     }
   } else {
-    // Legacy behaviour: fill all empty frames in canvas order, then
-    // overwrite loaded frames if files remain. Only use the first N files
-    // where N = number of empty frames on the canvas (per the spec: user
-    // uploads are limited to available empty slots when nothing is selected
-    // too — "First N selected images are uploaded").
     let fileIdx = 0;
-
-    // Pass 1: empty frames in canvas order.
+    // Pass 1: empty frames.
     for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
       if (!cells[i].loaded) {
-        loadFileIntoCellState(files[fileIdx], cells[i], state, i);
+        assignments.push({ file: files[fileIdx], cellState: cells[i], cellIdx: i });
         fileIdx++;
       }
     }
-
-    // Pass 2 (existing behaviour): if files remain, overwrite loaded frames.
+    // Pass 2: overwrite loaded frames.
     if (fileIdx < files.length) {
       for (let i = 0; i < cells.length && fileIdx < files.length; i++) {
         if (cells[i].loaded) {
-          loadFileIntoCellState(files[fileIdx], cells[i], state, i);
+          assignments.push({ file: files[fileIdx], cellState: cells[i], cellIdx: i });
           fileIdx++;
         }
       }
     }
   }
+
+  // Process ALL images in parallel — the heavy decode + canvas work runs
+  // concurrently via createImageBitmap (off-main-thread) + overlapping
+  // toBlob calls.
+  const results = await Promise.all(
+    assignments.map(a => processImageFile(a.file))
+  );
+
+  // Apply results to cells synchronously (fast — just setting properties).
+  assignments.forEach((a, j) => {
+    const info = results[j];
+    const cs = a.cellState;
+    cs.originalSrc = info.originalUrl;
+    cs.displayScale = info.needsDownscale ? info.displayW / info.originalW : 1;
+    cs.naturalW = info.displayW;
+    cs.naturalH = info.displayH;
+    cs.loaded = true;
+    calculateDefaultTransform(cs);
+    cs.el.classList.add('has-image');
+    cs.img.src = info.displaySrc;
+    applyTransformFor(state, a.cellIdx);
+  });
 
   bulkUploadTargetIndices = null;
   e.target.value = '';
@@ -7387,105 +7428,223 @@ document.getElementById('downloadBtn').addEventListener('click', async () => {
 TEMPLATES.forEach((t, i) => { t._index = i; });
 switchTemplate(0);
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║   TEMPLATE EXPORTER                                                      ║
+// ║   TEMPLATE EXPORTER — Google Sheets                                     ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
-document.getElementById('saveTemplateBtn').addEventListener('click', () => {
-  const state = templateStates[activeTemplateIndex];
 
-  // ─── Reading-order sort: left-to-right, top-to-bottom ──────────────
-  // Items on the "same row" (vertically overlapping) are ordered by x.
-  // A new row starts once an item's top is below the running row's bottom.
-  // This matches visual reading order better than a naive (y, x) lexicographic
-  // sort, which would misorder items that look aligned but have slightly
-  // different y values.
+// ── CONFIG: paste your Google Apps Script web-app URL here ──────────────
+const GOOGLE_SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyQhKtXzH-geVydjrmWSZaC8LmeQMVt2MzZqm2JB8DhOngprufn5pi-Ejea2KG9z61S8w/exec';
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Show a toast notification at the bottom of the screen.
+ * @param {string} message
+ * @param {'success'|'error'|'info'} type
+ * @param {number} durationMs
+ */
+function showSaveToast(message, type = 'info', durationMs = 4000) {
+  const toast = document.getElementById('saveToast');
+  const colors = {
+    success: { bg: '#1a2e1a', border: '#20c997', color: '#20c997' },
+    error:   { bg: '#2e1a1a', border: '#ff6b6b', color: '#ff6b6b' },
+    info:    { bg: '#1a1a2e', border: '#5a5aff', color: '#aaaaff' },
+  };
+  const c = colors[type] || colors.info;
+  toast.style.background = c.bg;
+  toast.style.border = `1px solid ${c.border}`;
+  toast.style.color = c.color;
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateX(-50%) translateY(0)';
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(80px)';
+  }, durationMs);
+}
+
+/**
+ * Serialize a single viewport's template state into a plain JSON-safe object.
+ * Reuses the existing reading-order sort logic.
+ */
+function serializeViewportState(templateIndex) {
+  const state = templateStates[templateIndex];
+  const tmpl = TEMPLATES[templateIndex];
+
+  // If this template was never initialized (user never switched to it),
+  // fall back to the raw config from TEMPLATE_PAIRS.
+  if (!state) {
+    const pairIdx = tmpl._pairIndex;
+    const pair = TEMPLATE_PAIRS[pairIdx];
+    const raw = tmpl._viewport === 'mobile' ? pair.mobile : pair.desktop;
+    return {
+      name: raw.name || tmpl._viewport,
+      canvasW: raw.canvasW,
+      canvasH: raw.canvasH,
+      bgColor: raw.bgColor,
+      bgImage: raw.bgImage || null,
+      frames: (raw.frames || []).map(f => ({
+        x: Math.round(f.x), y: Math.round(f.y),
+        w: Math.round(f.w), h: Math.round(f.h),
+        shape: f.shape || null,
+        matching_index: (typeof f.matching_index === 'number') ? f.matching_index : null,
+        borderEnabled: f.borderEnabled || false,
+        borderColor: f.borderColor || '#ffffff',
+        borderWidth: f.borderWidth || 1,
+      })),
+      textBoxes: (raw.textBoxes || []).map(tb => ({
+        x: Math.round(tb.x), y: Math.round(tb.y),
+        width: tb.width ? Math.round(tb.width) : null,
+        text: tb.text || '',
+        matching_index: (typeof tb.matching_index === 'number') ? tb.matching_index : null,
+        fontName: tb.fontName || 'DM Sans',
+        fontSize: tb.fontSize || 16,
+        fontColor: tb.fontColor || '#000000',
+        bold: tb.bold || false,
+        italic: tb.italic || false,
+        underline: tb.underline || false,
+        align: tb.align || 'left',
+      })),
+    };
+  }
+
+  // ─── Reading-order sort (same algorithm as the old exporter) ──────
   function sortReadingOrder(items) {
-    // items: array of { item, top, bottom, left }
     const sorted = [...items].sort((a, b) => a.top - b.top || a.left - b.left);
     const rows = [];
     let currentRow = null;
     let currentRowBottom = -Infinity;
     sorted.forEach(entry => {
       if (!currentRow || entry.top >= currentRowBottom) {
-        // New row: this item starts below every item in the previous row.
         currentRow = [entry];
         rows.push(currentRow);
         currentRowBottom = entry.bottom;
       } else {
-        // Same row: vertically overlaps the running row.
         currentRow.push(entry);
-        // Extend the row's bottom to the max so far, so subsequent items
-        // that overlap any row member are still grouped with this row.
         if (entry.bottom > currentRowBottom) currentRowBottom = entry.bottom;
       }
     });
-    // Within each row, sort left→right.
     return rows.flatMap(row => row.sort((a, b) => a.left - b.left).map(e => e.item));
   }
 
-  // 1. Format Frames — sorted in reading order
+  // Frames
   const frameEntries = state.cells.map(c => ({
-    item: c,
-    top: c.cfg.y,
-    bottom: c.cfg.y + c.cfg.h,
-    left: c.cfg.x,
+    item: c, top: c.cfg.y, bottom: c.cfg.y + c.cfg.h, left: c.cfg.x,
   }));
   const sortedCells = sortReadingOrder(frameEntries);
-  const framesStr = sortedCells.map(c => {
+  const frames = sortedCells.map(c => {
     const cfg = c.cfg;
-    const shapeStr = cfg.shape ? `'${cfg.shape}'` : 'null';
-    const miStr = (typeof cfg._matchingIndex === 'number') ? cfg._matchingIndex : 'null';
-    return `      { x: ${Math.round(cfg.x)}, y: ${Math.round(cfg.y)}, w: ${Math.round(cfg.w)}, h: ${Math.round(cfg.h)}, shape: ${shapeStr}, matching_index: ${miStr}, borderEnabled: ${c.borderEnabled}, borderColor: '${c.borderColor}', borderWidth: ${c.borderWidth} }`;
-  }).join(',\n');
+    return {
+      x: Math.round(cfg.x), y: Math.round(cfg.y),
+      w: Math.round(cfg.w), h: Math.round(cfg.h),
+      shape: cfg.shape || null,
+      matching_index: (typeof cfg._matchingIndex === 'number') ? cfg._matchingIndex : null,
+      borderEnabled: c.borderEnabled,
+      borderColor: c.borderColor,
+      borderWidth: c.borderWidth,
+    };
+  });
 
-  // 2. Format TextBoxes — sorted in reading order
-  // Textbox height isn't stored; estimate from font size × line count using a
-  // 1.3 line-height factor (matches drawTextBoxToCanvas). Good enough for row
-  // grouping; exact height isn't needed since we only compare overlap.
+  // TextBoxes
   const tbEntries = (state.textBoxes || []).map(tb => {
     const lineCount = Math.max(1, (tb.text || '').split(/<br\s*\/?>|<\/div><div>|<div>|\n/).length);
     const estHeight = tb.fontSize * 1.3 * lineCount;
-    return {
-      item: tb,
-      top: tb.y,
-      bottom: tb.y + estHeight,
-      left: tb.x,
-    };
+    return { item: tb, top: tb.y, bottom: tb.y + estHeight, left: tb.x };
   });
   const sortedTbs = sortReadingOrder(tbEntries);
-  const textBoxesStr = sortedTbs.map(tb => {
-    const safeText = JSON.stringify(tb.text); 
-    const w = tb.width ? Math.round(tb.width) : 'null';
-    const miStr = (typeof tb._matchingIndex === 'number') ? tb._matchingIndex : 'null';
-    return `      { x: ${Math.round(tb.x)}, y: ${Math.round(tb.y)}, width: ${w}, text: ${safeText}, matching_index: ${miStr}, fontName: '${tb.fontName}', fontSize: ${tb.fontSize}, fontColor: '${tb.fontColor}', bold: ${tb.bold}, italic: ${tb.italic}, underline: ${tb.underline}, align: '${tb.align}' }`;
-  }).join(',\n');
+  const textBoxes = sortedTbs.map(tb => ({
+    x: Math.round(tb.x), y: Math.round(tb.y),
+    width: tb.width ? Math.round(tb.width) : null,
+    text: tb.text || '',
+    matching_index: (typeof tb._matchingIndex === 'number') ? tb._matchingIndex : null,
+    fontName: tb.fontName, fontSize: tb.fontSize,
+    fontColor: tb.fontColor,
+    bold: tb.bold, italic: tb.italic,
+    underline: tb.underline, align: tb.align,
+  }));
 
-  // 3. Assemble the full template object string
-  const templateString = `  {
-    name: 'Custom Template',
-    description: '${CANVAS_W}×${CANVAS_H} · ${state.cells.length} frames',
-    canvasW: ${CANVAS_W},
-    canvasH: ${CANVAS_H},
-    bgColor: '${CANVAS_BG_COLOR}',
-    bgImage: null,
-    frames: [
-${framesStr}
-    ],
-    textBoxes: [
-${textBoxesStr}
-    ],
-  },`;
+  return {
+    name: tmpl.name || tmpl._viewport,
+    canvasW: tmpl.canvasW,
+    canvasH: tmpl.canvasH,
+    bgColor: tmpl.bgColor,
+    bgImage: tmpl.bgImage || null,
+    frames,
+    textBoxes,
+  };
+}
 
-  // 4. Copy to Clipboard
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(templateString).then(() => {
-      alert('✅ Template code copied to clipboard!\n\nYour border colors and widths have been captured.');
-    }).catch(err => {
-      console.error('Failed to copy text: ', err);
-      prompt('Copy the template code below:', templateString);
+document.getElementById('saveTemplateBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('saveTemplateBtn');
+
+  // ── Guard: webhook URL not configured ────────────────────────────
+  if (!GOOGLE_SHEETS_WEBHOOK_URL || GOOGLE_SHEETS_WEBHOOK_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
+    showSaveToast('⚠ Google Sheets webhook URL not configured. Ask your engineer to set it up.', 'error', 6000);
+    return;
+  }
+
+  // ── Prevent double-clicks while saving ───────────────────────────
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Saving…';
+
+  try {
+    // ── Build the full pair payload (desktop + mobile) ─────────────
+    const pairIdx = getActivePairIndex();
+    const pairName = TEMPLATE_PAIRS[pairIdx].name || 'Untitled';
+    const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+    const mobileIdx = getTemplateIndex(pairIdx, 'mobile');
+
+    const desktopData = serializeViewportState(desktopIdx);
+    const mobileData = serializeViewportState(mobileIdx);
+
+    // Auto-generate a human-readable name with timestamp
+    const now = new Date();
+    const timestamp = now.toLocaleString('en-SG', {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
     });
-  } else {
-    // Fallback for older browsers or non-HTTPS local environments
-    prompt('Copy the template code below (Ctrl+C / Cmd+C):', templateString);
+    const autoName = `${pairName} — ${timestamp}`;
+
+    const payload = {
+      templateName: autoName,
+      basePairName: pairName,
+      savedAt: now.toISOString(),
+      desktop: desktopData,
+      mobile: mobileData,
+    };
+
+    // ── POST to Google Sheets webhook ─────────────────────────────
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+    const response = await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',   // Apps Script doesn't support CORS preflight
+      headers: { 'Content-Type': 'text/plain' },  // avoid preflight
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    // With mode: 'no-cors', response is opaque (status 0). We can't
+    // inspect it, but if fetch() resolved without throwing, the
+    // request was sent successfully.
+    showSaveToast(`✅ Template "${autoName}" saved to Google Sheets`, 'success', 5000);
+
+  } catch (err) {
+    console.error('Template save failed:', err);
+
+    if (err.name === 'AbortError') {
+      showSaveToast('❌ Save timed out — check your internet connection and try again.', 'error', 6000);
+    } else if (!navigator.onLine) {
+      showSaveToast('❌ You appear to be offline. Please connect to the internet and try again.', 'error', 6000);
+    } else {
+      showSaveToast('❌ Save failed — check your connection or ask your engineer to verify the webhook URL.', 'error', 6000);
+    }
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
   }
 });
 </script>
