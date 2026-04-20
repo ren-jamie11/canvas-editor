@@ -83,16 +83,226 @@
     color: #555;
   }
 
+  /* ---- Save/Open buttons in sidebar ---- */
+  .sidebar-section-divider {
+    height: 1px;
+    background: #1e1e24;
+    margin: 14px 0 10px;
+  }
+
+  .file-btn {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, color 0.15s;
+    border-left: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .file-btn:hover {
+    background: #18181c;
+    color: #ccc;
+  }
+  .file-btn:disabled {
+    color: #444;
+    cursor: not-allowed;
+    background: transparent;
+  }
+  .file-btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+
+  /* Unsaved-changes confirmation modal */
+  .confirm-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+  .confirm-modal-backdrop.open { display: flex; }
+  .confirm-modal {
+    background: #17171c;
+    border: 1px solid #2a2a32;
+    border-radius: 6px;
+    padding: 20px 24px;
+    width: 380px;
+    max-width: 90vw;
+    color: #e0ddd8;
+    font-family: inherit;
+  }
+  .confirm-modal h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .confirm-modal p {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+  .confirm-modal .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .confirm-modal button {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 8px 14px;
+    border: 1px solid #2a2a32;
+    background: #1e1e24;
+    color: #e0ddd8;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .confirm-modal button:hover { background: #26262e; }
+  .confirm-modal button.primary {
+    background: #5a5aff;
+    border-color: #5a5aff;
+  }
+  .confirm-modal button.primary:hover { background: #4949dd; }
+  .confirm-modal button.danger {
+    color: #ff7a7a;
+  }
+
+  /* ---- Top tab bar (VS Code / browser style) ---------------------------- */
+  .canvas-tabs-bar {
+    display: flex;
+    align-items: stretch;
+    background: #0a0a0d;
+    border-bottom: 1px solid #1e1e24;
+    padding: 0;
+    margin: 0 0 12px 0;
+    min-height: 34px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .canvas-tabs-bar::-webkit-scrollbar { height: 4px; }
+  .canvas-tabs-bar::-webkit-scrollbar-thumb { background: #2a2a32; }
+
+  .canvas-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px 0 14px;
+    min-width: 110px;
+    max-width: 240px;
+    height: 34px;
+    background: transparent;
+    color: #777;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-right: 1px solid #1e1e24;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+    user-select: none;
+  }
+  .canvas-tab:hover { background: #15151a; color: #bbb; }
+  .canvas-tab.active {
+    background: #1a1a20;
+    color: #e0ddd8;
+    box-shadow: inset 0 2px 0 0 #5a5aff;
+  }
+  .canvas-tab .tab-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .canvas-tab .tab-name-input {
+    flex: 1 1 auto;
+    min-width: 60px;
+    background: #0a0a0d;
+    border: 1px solid #5a5aff;
+    border-radius: 2px;
+    color: #e0ddd8;
+    font: inherit;
+    padding: 1px 4px;
+    outline: none;
+  }
+  .canvas-tab .tab-dirty-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e0ddd8;
+    display: none;
+    flex-shrink: 0;
+  }
+  .canvas-tab.dirty .tab-dirty-dot { display: block; }
+  /* Hide the X when dirty-dot is showing, and vice versa — like VS Code. */
+  .canvas-tab.dirty:not(:hover) .tab-close { display: none; }
+  .canvas-tab:hover .tab-dirty-dot { display: none; }
+
+  .canvas-tab .tab-close {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #777;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+  }
+  .canvas-tab .tab-close:hover { background: #2a2a32; color: #e0ddd8; }
+  .canvas-tab .tab-close svg { width: 10px; height: 10px; }
+
+  .canvas-tab-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: transparent;
+    color: #666;
+    border: none;
+    border-right: 1px solid #1e1e24;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
+  }
+  .canvas-tab-add:hover { background: #15151a; color: #e0ddd8; }
+  .canvas-tab-add svg { width: 14px; height: 14px; }
+
   /* ---- Main content ---- */
   .main-content {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 28px 20px;
+    padding: 0 20px 28px;
     gap: 16px;
     overflow-y: auto;
     min-height: 100vh;
+  }
+
+  .canvas-tabs-bar {
+    /* Break out of the main-content's center alignment and horizontal
+       padding so the bar runs edge-to-edge along the top, like browser
+       tabs. The negative margins cancel the parent's 20px side padding. */
+    align-self: stretch;
+    margin: 0 -20px 12px;
   }
 
   h1 {
@@ -143,11 +353,12 @@
   }
 
   /* ---- Viewport toggle (Desktop/Mobile) ----
-     Anchored top-left of the main-content area, outside the sidebar.
-     Segmented control with two options; the active one highlights in accent. */
+     Anchored below the tab bar in the main-content area. The tab bar
+     spans the full top (34px tall + 12px margin), so the toggle sits
+     at ~52px from the viewport top. */
   .viewport-toggle {
     position: fixed;
-    top: 20px;
+    top: 56px;
     left: 220px; /* sidebar width (200) + 20px gap */
     display: inline-flex;
     background: #111114;
@@ -987,10 +1198,29 @@
 
 <div class="sidebar" id="sidebar">
   <div class="sidebar-title">Templates</div>
-  </div>
+  <div id="templateTabsContainer"></div>
+
+  <div class="sidebar-section-divider"></div>
+  <div class="sidebar-title">File</div>
+  <button type="button" class="file-btn" id="saveProjectBtn" title="Save current template pair to a file">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <polyline points="17 21 17 13 7 13 7 21"/>
+      <polyline points="7 3 7 8 15 8"/>
+    </svg>
+    Save
+  </button>
+  <button type="button" class="file-btn" id="openProjectBtn" title="Open a saved project file">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+    Open...
+  </button>
+  <input type="file" id="openFileInput" accept=".canvasproj,.json" style="display:none">
+</div>
 
 <div class="main-content">
-  <h1>Canvas Frame Editor</h1>
+  <div class="canvas-tabs-bar" id="canvasTabsBar"></div>
 
   <div class="viewport-toggle" id="viewportToggle">
     <button type="button" id="viewportDesktopBtn" data-viewport="desktop">
@@ -1011,7 +1241,7 @@
   </div>
 
   <div class="top-bar">
-    <button id="bulkUploadBtn">Upload Images</button>
+    <button id="bulkUploadBtn" style="color: #20c997; border-color: #20c997;">Upload Images</button>
     <input type="file" id="bulkFileInput" multiple accept="image/*,.mpo" style="display: none;">
 
     <button id="changeBgBtn">Change Background</button>
@@ -1027,7 +1257,7 @@
     <span class="zoom-display" id="zoomDisplay"></span>
     <button id="resetBtn">Reset Selected</button>
     <button id="resetAllBtn">Reset All</button>
-    <button id="saveTemplateBtn" style="color: #20c997; border-color: #20c997;">Save Template</button>
+    <button id="saveTemplateBtn" >Suggest Template</button>
   </div>
 
   <!-- Toast notification for save feedback -->
@@ -1040,15 +1270,6 @@
   "></div>
 
   <div class="canvas-area" id="canvasArea"></div>
-
-  <div class="hint">
-    Click frame to select · <b>Ctrl+Click</b> to multi-select · <b>Ctrl+Drag</b> to duplicate · <b>Drag on canvas</b> to box-select · <b>Delete</b> to remove<br/>
-    Drag to move frames · Scroll to resize frames · <b>Double-click empty frame</b> to upload · <b>Double-click and drag</b> to swap · <b>Alt+Click</b> to replace<br/>
-    <b>Shift+Drag</b> to pan image · <b>Shift+Scroll</b> to zoom image · <b>Ctrl+Drag</b> to duplicate<br/>
-    <b>T tool</b>: click canvas to place text · <b>Double-click</b> text to edit · <b>Scroll</b> selected text to resize<br/>
-    Unlock background to drag &amp; scroll-zoom the background image<br/>
-    <b>Ctrl+Z</b> Undo · <b>Ctrl+Y</b> Redo
-  </div>
 
   <button id="downloadBtn" class="download-btn">Download Canvas (ZIP)</button>
 </div>
@@ -2077,6 +2298,7 @@ const SHAPES = {
 // ║   Sync is always one-way: desktop → mobile (copies image data into       ║
 // ║   paired frames and text content into paired textboxes).                 ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+
 const TEMPLATE_PAIRS = [
   {
     name: 'Product Page A',
@@ -2148,7 +2370,31 @@ const TEMPLATE_PAIRS = [
       ],
     },
   },
+  {
+    name: 'Blank',
+    desktop: {
+      name: 'Desktop',
+      description: '732×1500 empty canvas',
+      canvasW: 732,
+      canvasH: 1500,
+      bgColor: '#ffffff',
+      bgImage: null,
+      frames: [],
+      textBoxes: [],
+    },
+    mobile: {
+      name: 'Mobile',
+      description: '600×2250 empty canvas',
+      canvasW: 600,
+      canvasH: 2250,
+      bgColor: '#ffffff',
+      bgImage: null,
+      frames: [],
+      textBoxes: [],
+    },
+  },
 ];
+
 
 // ─── Derive flat TEMPLATES array from pairs ───────────────────────────────
 // Keeps a flat TEMPLATES array so existing call sites still work. Each
@@ -3645,6 +3891,7 @@ const selectedLabel = document.getElementById('selectedLabel');
 // Array index === pair index.
 const pairLastViewport = TEMPLATE_PAIRS.map(() => 'desktop');
 const tabButtons = [];
+const _templateTabsContainer = document.getElementById('templateTabsContainer');
 TEMPLATE_PAIRS.forEach((pair, pairIdx) => {
   const btn = document.createElement('button');
   btn.className = 'tab-btn';
@@ -3657,7 +3904,7 @@ TEMPLATE_PAIRS.forEach((pair, pairIdx) => {
     const tmplIdx = getTemplateIndex(pairIdx, viewport);
     switchTemplate(tmplIdx);
   });
-  sidebar.appendChild(btn);
+  _templateTabsContainer.appendChild(btn);
   tabButtons.push(btn);
 });
 
@@ -7647,6 +7894,1204 @@ document.getElementById('saveTemplateBtn').addEventListener('click', async () =>
     btn.disabled = false;
   }
 });
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   SAVE / OPEN — project file persistence                                 ║
+// ║                                                                          ║
+// ║   Saves the currently active template PAIR (desktop + mobile) to a       ║
+// ║   .canvasproj file (JSON) that the user downloads to their local disk.   ║
+// ║   Open lets them pick that file back up and resume exactly where they    ║
+// ║   left off.                                                              ║
+// ║                                                                          ║
+// ║   Images live in the DOM as blob: URLs, which die on page unload, so     ║
+// ║   serialization converts every unique blob URL to a base64 data URL      ║
+// ║   once (deduplicated), then references them by an image id.              ║
+// ║                                                                          ║
+// ║   File format v1:                                                        ║
+// ║     {                                                                    ║
+// ║       version: 1,                                                        ║
+// ║       pairIndex: N,            // which pair this project belongs to     ║
+// ║       pairName: "Product Page A",                                        ║
+// ║       savedAt: ISO timestamp,                                            ║
+// ║       images: { img_0: "data:image/jpeg;base64,...", ... },              ║
+// ║       desktop: <captureState snapshot with src replaced by imgId>,       ║
+// ║       mobile:  <captureState snapshot with src replaced by imgId>        ║
+// ║     }                                                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const PROJECT_FILE_VERSION = 1;
+
+// Dirty flag — flipped true on every saveState() (see hook below), cleared on
+// successful Save or Open.
+let _projectDirty = false;
+function markProjectDirty() { _projectDirty = true; }
+function markProjectClean() { _projectDirty = false; }
+
+// Hook into the existing saveState() to flip the dirty flag. We wrap rather
+// than modify the original so we don't touch its 38 call sites.
+const _originalSaveState = saveState;
+saveState = function() {
+  _originalSaveState.apply(this, arguments);
+  markProjectDirty();
+};
+
+// ─── Blob URL → base64 conversion ────────────────────────────────────────
+async function blobUrlToDataUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('data:')) return url;   // already a data URL
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ─── Serialize a snapshot: replace every src with an image id, collect the
+//     unique data URLs in an `images` map. Dedupes: two cells pointing at
+//     the same blob URL produce one base64 blob in the output.
+async function snapshotToPortable(snapshot, imagesMap, urlToId) {
+  async function resolveUrl(url) {
+    if (!url) return '';
+    if (urlToId.has(url)) return urlToId.get(url);
+    const id = 'img_' + urlToId.size;
+    urlToId.set(url, id);
+    imagesMap[id] = await blobUrlToDataUrl(url);
+    return id;
+  }
+
+  const out = {
+    bg: { ...snapshot.bg },
+    cells: [],
+    textBoxes: snapshot.textBoxes.map(tb => ({ ...tb })),
+  };
+
+  if (out.bg.src) out.bg.src = await resolveUrl(out.bg.src);
+
+  for (const c of snapshot.cells) {
+    const cellOut = { ...c, cfg: JSON.parse(JSON.stringify(c.cfg)) };
+    if (c.src)         cellOut.src         = await resolveUrl(c.src);
+    if (c.originalSrc) cellOut.originalSrc = await resolveUrl(c.originalSrc);
+    out.cells.push(cellOut);
+  }
+  return out;
+}
+
+// ─── Inverse: replace image ids in a snapshot with fresh blob URLs built
+//     from the base64 data in the images map.
+function snapshotFromPortable(portable, idToBlobUrl) {
+  function resolveId(idOrEmpty) {
+    if (!idOrEmpty) return '';
+    if (idOrEmpty.startsWith('data:') || idOrEmpty.startsWith('blob:')) {
+      return idOrEmpty;  // already a usable URL (older/hybrid file)
+    }
+    return idToBlobUrl.get(idOrEmpty) || '';
+  }
+
+  const out = {
+    bg: { ...portable.bg },
+    cells: [],
+    textBoxes: portable.textBoxes.map(tb => ({ ...tb })),
+  };
+  if (out.bg.src) out.bg.src = resolveId(out.bg.src);
+
+  for (const c of portable.cells) {
+    const cellOut = { ...c, cfg: JSON.parse(JSON.stringify(c.cfg)) };
+    if (c.src)         cellOut.src         = resolveId(c.src);
+    if (c.originalSrc) cellOut.originalSrc = resolveId(c.originalSrc);
+    out.cells.push(cellOut);
+  }
+  return out;
+}
+
+// ─── Serialize the active pair (desktop + mobile) to a JSON-ready object.
+async function serializeActivePair() {
+  if (activeTemplateIndex < 0) throw new Error('No active template');
+
+  const pairIdx = getActivePairIndex();
+  const pair = TEMPLATE_PAIRS[pairIdx];
+  const pairName = pair.name || pair.desktop.name || `Template ${pairIdx + 1}`;
+
+  const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+  const mobileIdx  = getTemplateIndex(pairIdx, 'mobile');
+
+  // Make sure both template states exist so we can capture them — mobile
+  // may not have been initialized yet if the user hasn't toggled to it.
+  if (!templateStates[desktopIdx]) {
+    templateStates[desktopIdx] = createTemplateState(TEMPLATES[desktopIdx]);
+  }
+  if (!templateStates[mobileIdx]) {
+    templateStates[mobileIdx] = createTemplateState(TEMPLATES[mobileIdx]);
+  }
+
+  // Force-commit any in-flight textbox edits before capture. When the user
+  // clicks Save while a text box is still being edited, the blur handler
+  // schedules finalizeTextBox() on a 100ms timeout — which hasn't fired yet
+  // by the time we reach captureState(). We sidestep that race by reading
+  // contentEl.innerHTML directly into tb.text for every textbox in the pair.
+  [desktopIdx, mobileIdx].forEach(idx => {
+    const st = templateStates[idx];
+    if (!st || !st.textBoxes) return;
+    st.textBoxes.forEach(tb => {
+      if (tb.contentEl) tb.text = tb.contentEl.innerHTML;
+    });
+  });
+
+  const desktopSnap = captureState(templateStates[desktopIdx]);
+  const mobileSnap  = captureState(templateStates[mobileIdx]);
+
+  const images = {};
+  const urlToId = new Map();
+  const desktopPortable = await snapshotToPortable(desktopSnap, images, urlToId);
+  const mobilePortable  = await snapshotToPortable(mobileSnap,  images, urlToId);
+
+  return {
+    version: PROJECT_FILE_VERSION,
+    pairIndex: pairIdx,
+    pairName,
+    savedAt: new Date().toISOString(),
+    images,
+    desktop: desktopPortable,
+    mobile: mobilePortable,
+  };
+}
+
+// ─── Deserialize a loaded project back into both template states,
+//     then switch the view to the correct pair at the saved viewport.
+async function deserializeProject(project, preferredViewport = 'desktop') {
+  if (!project || typeof project !== 'object') throw new Error('Invalid file');
+  if (project.version !== PROJECT_FILE_VERSION) {
+    throw new Error(`Unsupported file version: ${project.version}`);
+  }
+  const pairIdx = project.pairIndex;
+  if (typeof pairIdx !== 'number' || !TEMPLATE_PAIRS[pairIdx]) {
+    throw new Error('Project references a template pair that no longer exists');
+  }
+
+  // Rehydrate images: data URL → blob URL (so the rest of the code,
+  // which happily accepts blob: URLs, keeps working unchanged).
+  const idToBlobUrl = new Map();
+  for (const [id, dataUrl] of Object.entries(project.images || {})) {
+    // Cheapest path: just use the data URL directly. <img src> accepts
+    // data URLs and canvas operations work against them. We skip the
+    // round-trip through Blob to keep startup fast.
+    idToBlobUrl.set(id, dataUrl);
+  }
+
+  const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+  const mobileIdx  = getTemplateIndex(pairIdx, 'mobile');
+
+  // Ensure both states exist before we call applyState.
+  if (!templateStates[desktopIdx]) {
+    templateStates[desktopIdx] = createTemplateState(TEMPLATES[desktopIdx]);
+  }
+  if (!templateStates[mobileIdx]) {
+    templateStates[mobileIdx] = createTemplateState(TEMPLATES[mobileIdx]);
+  }
+
+  const desktopSnap = snapshotFromPortable(project.desktop, idToBlobUrl);
+  const mobileSnap  = snapshotFromPortable(project.mobile,  idToBlobUrl);
+
+  // Fresh history on open (per user preference).
+  templateStates[desktopIdx].undoStack = [];
+  templateStates[desktopIdx].redoStack = [];
+  templateStates[mobileIdx].undoStack  = [];
+  templateStates[mobileIdx].redoStack  = [];
+
+  // If the pair we're loading into is currently visible, we need to switch
+  // AWAY first — otherwise applyState() mutates state.cells while the DOM
+  // still references the old cells. Easiest: force a switch to the target
+  // viewport's template index (which will cleanly re-mount) after applying.
+  const targetViewport = (preferredViewport === 'mobile') ? 'mobile' : 'desktop';
+  const targetIdx = (targetViewport === 'mobile') ? mobileIdx : desktopIdx;
+
+  // Apply to the non-active one first, then swap to it. This dodges the
+  // "currently-mounted DOM references dying mid-apply" problem because
+  // switchTemplate() re-appends everything from state.cells on entry.
+  if (activeTemplateIndex === desktopIdx || activeTemplateIndex === mobileIdx) {
+    // We're currently viewing this pair — temporarily switch away so
+    // the DOM teardown happens cleanly, then apply, then switch back.
+    const otherPairIdx = (pairIdx === 0) ? (TEMPLATE_PAIRS.length > 1 ? 1 : 0) : 0;
+    if (otherPairIdx !== pairIdx && TEMPLATE_PAIRS.length > 1) {
+      const otherTmplIdx = getTemplateIndex(otherPairIdx, 'desktop');
+      if (!templateStates[otherTmplIdx]) {
+        templateStates[otherTmplIdx] = createTemplateState(TEMPLATES[otherTmplIdx]);
+      }
+      switchTemplate(otherTmplIdx);
+    } else {
+      // Only one pair exists — blank the canvas area manually.
+      canvasArea.innerHTML = '';
+      activeTemplateIndex = -1;
+    }
+  }
+
+  applyState(desktopIdx, desktopSnap);
+  applyState(mobileIdx,  mobileSnap);
+
+  pairLastViewport[pairIdx] = targetViewport;
+  switchTemplate(targetIdx);
+
+  markProjectClean();
+}
+
+// ─── Filename helpers ────────────────────────────────────────────────────
+function sanitizeFilename(s) {
+  // Strip filesystem-unsafe characters, but preserve spaces (all modern
+  // filesystems handle them fine). Collapse internal whitespace runs.
+  return String(s).replace(/[^a-z0-9\-_. ]/gi, '_').replace(/ {2,}/g, ' ').trim().slice(0, 80);
+}
+function defaultFilenameForActive() {
+  if (activeTemplateIndex < 0) return 'canvas_project.canvasproj';
+  const pairIdx = getActivePairIndex();
+  const pair = TEMPLATE_PAIRS[pairIdx];
+  const name = pair.name || pair.desktop.name || `Template_${pairIdx + 1}`;
+  const stamp = new Date().toISOString().slice(0, 10);
+  return `${sanitizeFilename(name)}_${stamp}.canvasproj`;
+}
+
+// ─── Recents — removed. Stub functions kept so the tab-rename-on-save
+//     override (further down) still has something to wrap. The override is
+//     what actually renames the active tab to match the saved filename.
+function addRecent(_entry) { /* no-op; overridden below to rename tab */ }
+function renderRecents() { /* no-op — panel was removed */ }
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ─── UI handlers ─────────────────────────────────────────────────────────
+
+// Detect File System Access API. Chromium browsers (Chrome, Edge, Opera,
+// Brave, Arc) have it; Firefox and Safari don't. We feature-detect rather
+// than user-agent sniff.
+const _hasFSAccess = typeof window.showSaveFilePicker === 'function';
+
+// Common options for the native save picker. The first entry is the
+// "Canvas Project" type, which becomes the default in the "Save as type"
+// dropdown. `excludeAcceptAllOption: true` prevents the user from
+// accidentally saving as "All Files" with no extension.
+function _savePickerOptions(suggestedName) {
+  return {
+    suggestedName,
+    types: [{
+      description: 'Canvas Project',
+      accept: { 'application/json': ['.canvasproj'] },
+    }],
+    excludeAcceptAllOption: true,
+  };
+}
+
+async function handleSaveClick() {
+  if (activeTemplateIndex < 0) {
+    showSaveToast('Select a template first.', 'error', 3000);
+    return;
+  }
+
+  const btn = document.getElementById('saveProjectBtn');
+  const origLabel = btn.innerHTML;
+  const setBusy = (busy) => {
+    btn.disabled = busy;
+    btn.innerHTML = busy
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10" opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg> Saving...'
+      : origLabel;
+  };
+
+  const defaultName = defaultFilenameForActive();
+
+  // ── Path A: Chromium — native "Save As" dialog via File System Access API.
+  //    IMPORTANT: showSaveFilePicker() MUST be the first async call after the
+  //    user gesture. If we serialize first, Chrome throws SecurityError
+  //    because the user-gesture window has elapsed.
+  if (_hasFSAccess) {
+    let handle;
+    try {
+      handle = await window.showSaveFilePicker(_savePickerOptions(defaultName));
+    } catch (err) {
+      // User hit Cancel — silent exit, no toast, no error.
+      if (err && err.name === 'AbortError') return;
+      console.error('Save picker failed:', err);
+      showSaveToast('❌ Could not open save dialog: ' + err.message, 'error', 5000);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const project = await serializeActivePair();
+      const json = JSON.stringify(project);
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+
+      const filename = handle.name || defaultName;
+      addRecent({
+        filename,
+        pairName: project.pairName,
+        pairIndex: project.pairIndex,
+        savedAt: project.savedAt,
+      });
+      markProjectClean();
+      const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
+      showSaveToast(`✅ Saved "${filename}" (${sizeMB} MB)`, 'success', 4000);
+    } catch (err) {
+      console.error('Save failed:', err);
+      showSaveToast('❌ Save failed: ' + err.message, 'error', 5000);
+    } finally {
+      setBusy(false);
+    }
+    return;
+  }
+
+  // ── Path B: Firefox/Safari fallback — trigger a download. We can't open
+  //    a real "Save As" dialog, so we pre-fill the filename via a prompt()
+  //    and let the browser put the file in its default downloads folder
+  //    (or show its own Save dialog, depending on user's browser settings).
+  const chosen = prompt(
+    'Save project as:\n\n(Your browser doesn\'t support the native Save dialog. ' +
+    'The file will download to your default Downloads folder — ' +
+    'Chrome, Edge, and Opera offer a native Save As dialog.)',
+    defaultName
+  );
+  if (chosen === null) return;   // user cancelled
+
+  let filename = sanitizeFilename(chosen) || defaultName;
+  if (!/\.(canvasproj|json)$/i.test(filename)) filename += '.canvasproj';
+
+  setBusy(true);
+  try {
+    const project = await serializeActivePair();
+    const json = JSON.stringify(project);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    addRecent({
+      filename,
+      pairName: project.pairName,
+      pairIndex: project.pairIndex,
+      savedAt: project.savedAt,
+    });
+    markProjectClean();
+    const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
+    showSaveToast(`✅ Saved "${filename}" (${sizeMB} MB)`, 'success', 4000);
+  } catch (err) {
+    console.error('Save failed:', err);
+    showSaveToast('❌ Save failed: ' + err.message, 'error', 5000);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// Confirm modal helper — returns a Promise<'save'|'discard'|'cancel'>.
+function confirmUnsavedChanges(action = 'opening another project') {
+  return new Promise(resolve => {
+    if (!_projectDirty) { resolve('discard'); return; }
+    const backdrop = document.getElementById('confirmModalBackdrop');
+    const body = document.getElementById('confirmModalBody');
+    body.textContent = `You have unsaved changes. Do you want to save before ${action}?`;
+    backdrop.classList.add('open');
+
+    const saveBtn    = document.getElementById('confirmModalSave');
+    const discardBtn = document.getElementById('confirmModalDiscard');
+    const cancelBtn  = document.getElementById('confirmModalCancel');
+
+    const cleanup = (choice) => {
+      backdrop.classList.remove('open');
+      saveBtn.onclick = null;
+      discardBtn.onclick = null;
+      cancelBtn.onclick = null;
+      resolve(choice);
+    };
+    saveBtn.onclick    = () => cleanup('save');
+    discardBtn.onclick = () => cleanup('discard');
+    cancelBtn.onclick  = () => cleanup('cancel');
+  });
+}
+
+function handleOpenClick() {
+  // Chain: confirm → file picker. The picker itself is async via change event.
+  (async () => {
+    const choice = await confirmUnsavedChanges('opening another project');
+    if (choice === 'cancel') return;
+    if (choice === 'save') {
+      await handleSaveClick();
+      // If the user cancelled the save prompt, project is still dirty —
+      // err on the side of not losing their work.
+      if (_projectDirty) return;
+    }
+    document.getElementById('openFileInput').click();
+  })();
+}
+
+async function handleFileChosen(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';   // reset so picking the same file twice re-triggers
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const project = JSON.parse(text);
+    await deserializeProject(project);
+    showSaveToast(`✅ Opened "${file.name}"`, 'success', 3500);
+    // Bubble this file up in the recents list.
+    addRecent({
+      filename: file.name,
+      pairName: project.pairName || 'Unknown',
+      pairIndex: project.pairIndex,
+      savedAt: project.savedAt || new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Open failed:', err);
+    showSaveToast('❌ Could not open file: ' + err.message, 'error', 5000);
+  }
+}
+
+// ─── Wire up buttons ─────────────────────────────────────────────────────
+document.getElementById('saveProjectBtn').addEventListener('click', handleSaveClick);
+document.getElementById('openProjectBtn').addEventListener('click', handleOpenClick);
+document.getElementById('openFileInput').addEventListener('change', handleFileChosen);
+
+// ─── beforeunload: warn when there are unsaved changes ───────────────────
+// Browsers only show their own generic "Leave site?" dialog here — custom
+// messages are ignored. But the warning does fire reliably.
+window.addEventListener('beforeunload', (e) => {
+  if (_projectDirty) {
+    e.preventDefault();
+    e.returnValue = '';   // required for Chrome
+    return '';
+  }
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║   TABS — multiple independent canvases per template                       ║
+// ║                                                                          ║
+// ║   Each TEMPLATE_PAIRS entry has its own list of tabs. Every tab holds    ║
+// ║   a full snapshot of both the desktop and mobile states plus independent ║
+// ║   undo/redo history. Switching tabs = capture current → load new.        ║
+// ║                                                                          ║
+// ║   Layered on top of the existing templateStates[] array, which always    ║
+// ║   holds the active tab's live state. All the existing code that reads    ║
+// ║   templateStates[activeTemplateIndex] keeps working unchanged.           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const TABS_LS_KEY = 'canvasEditor.tabs';
+const TABS_PERSIST_DEBOUNCE_MS = 500;
+
+// Per-template tab state. Initialized on first view of each template.
+// Shape: tabsByPair[pairIdx] = { list: [tab, ...], activeTabId: string }
+// Tab shape: { id, name, desktopSnap, mobileSnap, desktopUndo, desktopRedo,
+//              mobileUndo, mobileRedo, dirty, lastViewport }
+const tabsByPair = {};
+let _tabIdCounter = 0;
+function newTabId() { return 'tab_' + (++_tabIdCounter); }
+
+// ─── Tab creation / initialization ───────────────────────────────────────
+function createEmptyTab(pairIdx, name) {
+  const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+  const mobileIdx  = getTemplateIndex(pairIdx, 'mobile');
+  const freshDesktop = createTemplateState(TEMPLATES[desktopIdx]);
+  const freshMobile  = createTemplateState(TEMPLATES[mobileIdx]);
+  return {
+    id: newTabId(),
+    name: name || 'Tab 1',
+    desktopSnap: captureState(freshDesktop),
+    mobileSnap:  captureState(freshMobile),
+    desktopUndo: [],
+    desktopRedo: [],
+    mobileUndo:  [],
+    mobileRedo:  [],
+    dirty: false,
+    lastViewport: 'desktop',
+  };
+}
+
+function ensurePairTabs(pairIdx) {
+  if (tabsByPair[pairIdx]) return tabsByPair[pairIdx];
+  // Try to restore from localStorage first
+  const restored = _restorePairTabsFromStorage(pairIdx);
+  if (restored) {
+    tabsByPair[pairIdx] = restored;
+    return restored;
+  }
+  // Fresh start: one empty tab
+  const firstTab = createEmptyTab(pairIdx, 'Tab 1');
+  tabsByPair[pairIdx] = { list: [firstTab], activeTabId: firstTab.id };
+  return tabsByPair[pairIdx];
+}
+
+function getActiveTab(pairIdx) {
+  const tabs = tabsByPair[pairIdx];
+  if (!tabs) return null;
+  return tabs.list.find(t => t.id === tabs.activeTabId) || tabs.list[0];
+}
+
+function nextDefaultTabName(pairIdx) {
+  const tabs = tabsByPair[pairIdx];
+  if (!tabs) return 'Tab 1';
+  // Find highest existing "Tab N" number and add 1. Works even after renames.
+  let max = 0;
+  tabs.list.forEach(t => {
+    const m = t.name.match(/^Tab (\d+)$/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return 'Tab ' + (max + 1);
+}
+
+// ─── Capture from / apply to the live templateStates[] slots ─────────────
+// These are the bridge between in-memory templateStates (one slot per
+// template) and the tab storage (many tabs per template).
+
+function captureActiveTabFromLive(pairIdx) {
+  const tabs = tabsByPair[pairIdx];
+  const tab = getActiveTab(pairIdx);
+  if (!tab) return;
+  const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+  const mobileIdx  = getTemplateIndex(pairIdx, 'mobile');
+
+  // Force-sync in-flight textbox edits to tb.text before capture (same as
+  // save path). Cheap, idempotent, avoids losing in-progress text.
+  [desktopIdx, mobileIdx].forEach(idx => {
+    const st = templateStates[idx];
+    if (!st || !st.textBoxes) return;
+    st.textBoxes.forEach(tb => {
+      if (tb.contentEl) tb.text = tb.contentEl.innerHTML;
+    });
+  });
+
+  if (templateStates[desktopIdx]) {
+    tab.desktopSnap = captureState(templateStates[desktopIdx]);
+    tab.desktopUndo = [...(templateStates[desktopIdx].undoStack || [])];
+    tab.desktopRedo = [...(templateStates[desktopIdx].redoStack || [])];
+  }
+  if (templateStates[mobileIdx]) {
+    tab.mobileSnap = captureState(templateStates[mobileIdx]);
+    tab.mobileUndo = [...(templateStates[mobileIdx].undoStack || [])];
+    tab.mobileRedo = [...(templateStates[mobileIdx].redoStack || [])];
+  }
+  tab.lastViewport = getActiveViewport();
+}
+
+function applyTabToLive(pairIdx, tabId) {
+  const tabs = tabsByPair[pairIdx];
+  const tab = tabs.list.find(t => t.id === tabId);
+  if (!tab) return;
+  const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+  const mobileIdx  = getTemplateIndex(pairIdx, 'mobile');
+
+  // Ensure template state slots exist
+  if (!templateStates[desktopIdx]) {
+    templateStates[desktopIdx] = createTemplateState(TEMPLATES[desktopIdx]);
+  }
+  if (!templateStates[mobileIdx]) {
+    templateStates[mobileIdx] = createTemplateState(TEMPLATES[mobileIdx]);
+  }
+
+  // If we're currently viewing this pair, we need to teardown DOM cleanly
+  // before applyState mutates state.cells. Same trick as deserializeProject.
+  const currentlyViewingThisPair = (activeTemplateIndex === desktopIdx || activeTemplateIndex === mobileIdx);
+  if (currentlyViewingThisPair) {
+    canvasArea.innerHTML = '';
+    // Note: activeTemplateIndex stays set — switchTemplate() handles re-mount.
+  }
+
+  applyState(desktopIdx, tab.desktopSnap);
+  applyState(mobileIdx,  tab.mobileSnap);
+
+  templateStates[desktopIdx].undoStack = [...tab.desktopUndo];
+  templateStates[desktopIdx].redoStack = [...tab.desktopRedo];
+  templateStates[mobileIdx].undoStack  = [...tab.mobileUndo];
+  templateStates[mobileIdx].redoStack  = [...tab.mobileRedo];
+}
+
+// ─── Public tab operations ───────────────────────────────────────────────
+
+function switchTab(pairIdx, tabId) {
+  const tabs = tabsByPair[pairIdx];
+  if (!tabs || tabs.activeTabId === tabId) return;
+
+  // 1. Snapshot the outgoing tab's live state
+  captureActiveTabFromLive(pairIdx);
+
+  // 2. Change the active tab pointer
+  tabs.activeTabId = tabId;
+
+  // 3. Push incoming tab's snapshots into the live slots
+  applyTabToLive(pairIdx, tabId);
+
+  // 4. Re-mount the view for the target viewport
+  const targetTab = getActiveTab(pairIdx);
+  const targetViewport = targetTab.lastViewport || 'desktop';
+  pairLastViewport[pairIdx] = targetViewport;
+  const targetTmplIdx = getTemplateIndex(pairIdx, targetViewport);
+
+  // Force a re-render even if activeTemplateIndex already matches
+  if (activeTemplateIndex === targetTmplIdx) {
+    activeTemplateIndex = -1;   // force switchTemplate to do the work
+  }
+  switchTemplate(targetTmplIdx);
+
+  renderTabBar();
+  schedulePersistTabs();
+}
+
+function addTab(pairIdx) {
+  ensurePairTabs(pairIdx);
+  captureActiveTabFromLive(pairIdx);   // save outgoing tab first
+  const newTab = createEmptyTab(pairIdx, nextDefaultTabName(pairIdx));
+  tabsByPair[pairIdx].list.push(newTab);
+  tabsByPair[pairIdx].activeTabId = newTab.id;
+  applyTabToLive(pairIdx, newTab.id);
+  pairLastViewport[pairIdx] = 'desktop';
+  const tmplIdx = getTemplateIndex(pairIdx, 'desktop');
+  if (activeTemplateIndex === tmplIdx) activeTemplateIndex = -1;
+  switchTemplate(tmplIdx);
+  renderTabBar();
+  schedulePersistTabs();
+}
+
+async function closeTab(pairIdx, tabId) {
+  const tabs = tabsByPair[pairIdx];
+  if (!tabs) return;
+  const tabIdx = tabs.list.findIndex(t => t.id === tabId);
+  if (tabIdx < 0) return;
+  const tab = tabs.list[tabIdx];
+
+  // Confirm discard if dirty
+  if (tab.dirty) {
+    const choice = await confirmCloseTab(tab.name);
+    if (choice === 'cancel') return;
+    if (choice === 'save') {
+      // If closing the active tab, just save. If closing a background
+      // tab, switch to it, save, then close.
+      if (tabs.activeTabId !== tabId) switchTab(pairIdx, tabId);
+      await handleSaveClick();
+      // If save was cancelled, the tab's still dirty — abort close.
+      if (tab.dirty) return;
+    }
+  }
+
+  tabs.list.splice(tabIdx, 1);
+
+  // If the closed tab was active, pick a neighbor. If no tabs left, create a fresh one.
+  if (tabs.activeTabId === tabId) {
+    if (tabs.list.length === 0) {
+      const fresh = createEmptyTab(pairIdx, 'Tab 1');
+      tabs.list.push(fresh);
+      tabs.activeTabId = fresh.id;
+    } else {
+      const neighbor = tabs.list[Math.max(0, tabIdx - 1)];
+      tabs.activeTabId = neighbor.id;
+    }
+    applyTabToLive(pairIdx, tabs.activeTabId);
+    const activeTab = getActiveTab(pairIdx);
+    const viewport = activeTab.lastViewport || 'desktop';
+    pairLastViewport[pairIdx] = viewport;
+    const tmplIdx = getTemplateIndex(pairIdx, viewport);
+    if (activeTemplateIndex === tmplIdx) activeTemplateIndex = -1;
+    switchTemplate(tmplIdx);
+  }
+
+  renderTabBar();
+  schedulePersistTabs();
+}
+
+function renameTab(pairIdx, tabId, newName) {
+  const tabs = tabsByPair[pairIdx];
+  if (!tabs) return;
+  const tab = tabs.list.find(t => t.id === tabId);
+  if (!tab) return;
+  const trimmed = (newName || '').trim();
+  if (!trimmed) return;   // reject empty names
+  tab.name = trimmed.slice(0, 60);
+  renderTabBar();
+  schedulePersistTabs();
+}
+
+function markActiveTabDirty(pairIdx) {
+  const tab = getActiveTab(pairIdx);
+  if (!tab) return;
+  if (!tab.dirty) {
+    tab.dirty = true;
+    renderTabBar();
+    schedulePersistTabs();
+  }
+}
+
+function markActiveTabClean(pairIdx) {
+  const tab = getActiveTab(pairIdx);
+  if (!tab) return;
+  if (tab.dirty) {
+    tab.dirty = false;
+    renderTabBar();
+    schedulePersistTabs();
+  }
+}
+
+function anyTabDirty() {
+  for (const pairIdx in tabsByPair) {
+    for (const tab of tabsByPair[pairIdx].list) {
+      if (tab.dirty) return true;
+    }
+  }
+  return false;
+}
+
+// ─── Tab bar rendering ───────────────────────────────────────────────────
+
+const _tabBarEl = document.getElementById('canvasTabsBar');
+
+function renderTabBar() {
+  const pairIdx = getActivePairIndex();
+  if (pairIdx < 0) {
+    _tabBarEl.innerHTML = '';
+    return;
+  }
+  const tabs = ensurePairTabs(pairIdx);
+  _tabBarEl.innerHTML = '';
+
+  tabs.list.forEach(tab => {
+    const tabEl = document.createElement('div');
+    tabEl.className = 'canvas-tab';
+    if (tab.id === tabs.activeTabId) tabEl.classList.add('active');
+    if (tab.dirty) tabEl.classList.add('dirty');
+    tabEl.dataset.tabid = tab.id;
+
+    const dot = document.createElement('span');
+    dot.className = 'tab-dirty-dot';
+    tabEl.appendChild(dot);
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'tab-name';
+    nameEl.textContent = tab.name;
+    nameEl.title = tab.name;
+    tabEl.appendChild(nameEl);
+
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'tab-close';
+    closeBtn.title = 'Close tab';
+    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M6 18L18 6"/></svg>';
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeTab(pairIdx, tab.id);
+    });
+    tabEl.appendChild(closeBtn);
+
+    // Click to activate
+    tabEl.addEventListener('click', (e) => {
+      if (e.target.classList.contains('tab-close') || e.target.closest('.tab-close')) return;
+      if (e.target.classList.contains('tab-name-input')) return;
+      if (tab.id !== tabs.activeTabId) switchTab(pairIdx, tab.id);
+    });
+
+    // Double-click to rename
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      beginRename(tabEl, pairIdx, tab);
+    });
+
+    _tabBarEl.appendChild(tabEl);
+  });
+
+  // + button to add a new tab
+  const addBtn = document.createElement('button');
+  addBtn.className = 'canvas-tab-add';
+  addBtn.type = 'button';
+  addBtn.title = 'New tab';
+  addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  addBtn.addEventListener('click', () => addTab(pairIdx));
+  _tabBarEl.appendChild(addBtn);
+}
+
+function beginRename(tabEl, pairIdx, tab) {
+  const nameEl = tabEl.querySelector('.tab-name');
+  if (!nameEl) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'tab-name-input';
+  input.value = tab.name;
+  input.maxLength = 60;
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = () => {
+    const v = input.value.trim();
+    if (v) renameTab(pairIdx, tab.id, v);
+    else renderTabBar();  // cancelled / empty — just re-render with old name
+  };
+  const cancel = () => renderTabBar();
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { e.preventDefault(); input.removeEventListener('blur', commit); cancel(); }
+  });
+  // Don't propagate clicks inside the input up to the tab's click handler
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('mousedown', (e) => e.stopPropagation());
+}
+
+// ─── Confirm-close modal (reuses the existing confirm modal DOM) ─────────
+function confirmCloseTab(tabName) {
+  return new Promise(resolve => {
+    const backdrop = document.getElementById('confirmModalBackdrop');
+    const body  = document.getElementById('confirmModalBody');
+    const title = document.getElementById('confirmModalTitle');
+    title.textContent = 'Close tab with unsaved changes?';
+    body.textContent  = `"${tabName}" has unsaved changes. Save before closing?`;
+    backdrop.classList.add('open');
+
+    const saveBtn    = document.getElementById('confirmModalSave');
+    const discardBtn = document.getElementById('confirmModalDiscard');
+    const cancelBtn  = document.getElementById('confirmModalCancel');
+    saveBtn.textContent    = 'Save & close';
+    discardBtn.textContent = 'Discard';
+    cancelBtn.textContent  = 'Cancel';
+
+    const cleanup = (choice) => {
+      backdrop.classList.remove('open');
+      saveBtn.onclick = discardBtn.onclick = cancelBtn.onclick = null;
+      // Restore default text for other callers
+      title.textContent      = 'Unsaved changes';
+      saveBtn.textContent    = 'Save & continue';
+      discardBtn.textContent = 'Discard';
+      cancelBtn.textContent  = 'Cancel';
+      resolve(choice);
+    };
+    saveBtn.onclick    = () => cleanup('save');
+    discardBtn.onclick = () => cleanup('discard');
+    cancelBtn.onclick  = () => cleanup('cancel');
+  });
+}
+
+// ─── Wire tab system into existing code ──────────────────────────────────
+
+// Replace the global dirty flag with per-tab tracking. The old `_projectDirty`
+// and `markProjectDirty/Clean` become proxies for the active tab.
+const _origMarkDirty = markProjectDirty;
+const _origMarkClean = markProjectClean;
+markProjectDirty = function() {
+  _origMarkDirty();
+  const pairIdx = getActivePairIndex();
+  if (pairIdx >= 0) markActiveTabDirty(pairIdx);
+};
+markProjectClean = function() {
+  _origMarkClean();
+  const pairIdx = getActivePairIndex();
+  if (pairIdx >= 0) markActiveTabClean(pairIdx);
+};
+
+// Re-render the tab bar whenever the template changes (different template
+// = different tab list is shown). We also capture the outgoing pair's
+// active tab state BEFORE switching — so user work isn't lost when they
+// click a different template in the sidebar.
+const _tabsSwitchTemplatePrev = switchTemplate;
+const _pairVisitedThisSession = new Set();   // track which pairs have been materialized
+switchTemplate = function(idx) {
+  // Snapshot the outgoing pair's active tab when leaving for a DIFFERENT pair.
+  // (Same-pair desktop↔mobile toggles are handled by syncViewports already.)
+  const outgoingPair = getActivePairIndex();
+  const incomingPair = (idx >= 0 && TEMPLATES[idx]) ? TEMPLATES[idx]._pairIndex : -1;
+  if (outgoingPair >= 0 && outgoingPair !== incomingPair && tabsByPair[outgoingPair]) {
+    captureActiveTabFromLive(outgoingPair);
+  }
+
+  // First-visit-this-session check: if the incoming pair has tabs restored
+  // from localStorage, we need to push the active tab's state into the
+  // live slots AFTER the underlying switchTemplate (which initializes
+  // templateStates with default content).
+  const needsRestore = (incomingPair >= 0) &&
+                       !_pairVisitedThisSession.has(incomingPair) &&
+                       !!_peekStoredTabs(incomingPair);
+
+  _tabsSwitchTemplatePrev(idx);
+
+  if (incomingPair >= 0) {
+    _pairVisitedThisSession.add(incomingPair);
+    if (needsRestore) {
+      const tabs = ensurePairTabs(incomingPair);   // loads from storage
+      applyTabToLive(incomingPair, tabs.activeTabId);
+      // The underlying switchTemplate's DOM re-mount has already happened,
+      // but applyState inside applyTabToLive re-creates all cell elements
+      // and appends them to canvasArea, which is exactly what we want.
+      // Update the viewport if the restored tab was last on mobile.
+      const activeTab = getActiveTab(incomingPair);
+      const viewport = activeTab.lastViewport || 'desktop';
+      if (viewport !== getActiveViewport()) {
+        pairLastViewport[incomingPair] = viewport;
+        const targetIdx = getTemplateIndex(incomingPair, viewport);
+        activeTemplateIndex = -1;
+        _tabsSwitchTemplatePrev(targetIdx);
+      }
+    } else {
+      ensurePairTabs(incomingPair);   // creates default Tab 1 if needed
+    }
+  }
+
+  renderTabBar();
+};
+
+function _peekStoredTabs(pairIdx) {
+  try {
+    return localStorage.getItem(TABS_LS_KEY + ':' + pairIdx);
+  } catch (e) { return null; }
+}
+
+// beforeunload: now fires if ANY tab in ANY template is dirty.
+window.addEventListener('beforeunload', (e) => {
+  if (anyTabDirty()) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+}, { capture: true });   // capture to run before the earlier handler
+
+// ─── Filename default uses the active tab's name ─────────────────────────
+const _origDefaultFilename = defaultFilenameForActive;
+defaultFilenameForActive = function() {
+  const pairIdx = getActivePairIndex();
+  if (pairIdx < 0) return _origDefaultFilename();
+  const tab = getActiveTab(pairIdx);
+  if (!tab) return _origDefaultFilename();
+  return sanitizeFilename(tab.name) + '.canvasproj';
+};
+
+// On successful save: rename the active tab to match the file (minus extension)
+// so subsequent saves default to the same filename.
+const _origAddRecent = addRecent;
+addRecent = function(entry) {
+  _origAddRecent(entry);
+  const pairIdx = getActivePairIndex();
+  if (pairIdx < 0) return;
+  const tab = getActiveTab(pairIdx);
+  if (!tab) return;
+  const baseName = String(entry.filename || '').replace(/\.(canvasproj|json)$/i, '');
+  if (baseName) renameTab(pairIdx, tab.id, baseName);
+};
+
+// ─── Open: always create a NEW tab for the loaded project ────────────────
+// Override handleFileChosen (the existing one was wired at the bottom of
+// the save/open module). We replace its input-change listener.
+const _openFileInputEl = document.getElementById('openFileInput');
+// Remove the previously attached listener by cloning the node (cheapest way).
+const _openFileInputClone = _openFileInputEl.cloneNode(true);
+_openFileInputEl.parentNode.replaceChild(_openFileInputClone, _openFileInputEl);
+
+async function handleFileChosenWithTabs(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const project = JSON.parse(text);
+    if (typeof project.pairIndex !== 'number' || !TEMPLATE_PAIRS[project.pairIndex]) {
+      throw new Error('Project references a template pair that no longer exists');
+    }
+
+    const pairIdx = project.pairIndex;
+    ensurePairTabs(pairIdx);
+
+    // Switch to the target template pair if we're not already there
+    const desktopIdx = getTemplateIndex(pairIdx, 'desktop');
+    const currentPair = getActivePairIndex();
+    if (currentPair !== pairIdx) {
+      // We need to switch pairs. Capture the outgoing pair's active tab first.
+      if (currentPair >= 0) captureActiveTabFromLive(currentPair);
+      switchTemplate(desktopIdx);
+    } else {
+      // Already on this pair — snapshot current tab before replacing live state
+      captureActiveTabFromLive(pairIdx);
+    }
+
+    // Build a fresh tab with the file contents
+    const tabName = file.name.replace(/\.(canvasproj|json)$/i, '').slice(0, 60);
+    const newTab = {
+      id: newTabId(),
+      name: tabName || 'Tab',
+      desktopSnap: _portableSnapshotToLive(project.desktop, project.images || {}),
+      mobileSnap:  _portableSnapshotToLive(project.mobile,  project.images || {}),
+      desktopUndo: [], desktopRedo: [],
+      mobileUndo:  [], mobileRedo:  [],
+      dirty: false,
+      lastViewport: 'desktop',
+    };
+    tabsByPair[pairIdx].list.push(newTab);
+    tabsByPair[pairIdx].activeTabId = newTab.id;
+
+    applyTabToLive(pairIdx, newTab.id);
+    const tmplIdx = getTemplateIndex(pairIdx, 'desktop');
+    if (activeTemplateIndex === tmplIdx) activeTemplateIndex = -1;
+    switchTemplate(tmplIdx);
+
+    addRecent({
+      filename: file.name,
+      pairName: project.pairName || 'Unknown',
+      pairIndex: project.pairIndex,
+      savedAt: project.savedAt || new Date().toISOString(),
+    });
+    // addRecent renamed the tab to file basename — which is what we want.
+    markProjectClean();
+    showSaveToast(`✅ Opened "${file.name}" in new tab`, 'success', 3500);
+    renderTabBar();
+    schedulePersistTabs();
+  } catch (err) {
+    console.error('Open failed:', err);
+    showSaveToast('❌ Could not open file: ' + err.message, 'error', 5000);
+  }
+}
+
+// Helper: convert a portable snapshot (with imgId refs) into a live snapshot
+// (with data URLs usable as <img src>). Uses the existing snapshotFromPortable
+// infrastructure but pre-resolves image ids.
+function _portableSnapshotToLive(portable, imagesMap) {
+  const idToUrl = new Map();
+  for (const [id, dataUrl] of Object.entries(imagesMap)) {
+    idToUrl.set(id, dataUrl);
+  }
+  return snapshotFromPortable(portable, idToUrl);
+}
+
+_openFileInputClone.addEventListener('change', handleFileChosenWithTabs);
+
+// Also update handleOpenClick's dirty check — now only the ACTIVE tab's
+// dirty state matters for "save before opening?" prompt (since we open in
+// a new tab, the current tab's work is preserved regardless).
+// Override the Open button to skip the confirm (new tab = no conflict).
+const _openBtn = document.getElementById('openProjectBtn');
+const _openBtnClone = _openBtn.cloneNode(true);
+_openBtn.parentNode.replaceChild(_openBtnClone, _openBtn);
+_openBtnClone.addEventListener('click', () => {
+  document.getElementById('openFileInput').click();
+});
+
+// ─── Persistence to localStorage ─────────────────────────────────────────
+// Tab structure + all snapshots + history. Images within snapshots are
+// base64 data URLs, so this can get large — we cap at ~4.5 MB per pair and
+// skip persistence if over the limit (the user still has their in-memory
+// state for this session).
+
+let _persistTimer = null;
+function schedulePersistTabs() {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(persistTabsNow, TABS_PERSIST_DEBOUNCE_MS);
+}
+
+function persistTabsNow() {
+  try {
+    // Make sure the live state is captured before we serialize
+    const activePair = getActivePairIndex();
+    if (activePair >= 0 && tabsByPair[activePair]) {
+      captureActiveTabFromLive(activePair);
+    }
+    // Serialize per-pair so a single oversized pair doesn't kill the whole thing
+    for (const pairIdx in tabsByPair) {
+      const key = TABS_LS_KEY + ':' + pairIdx;
+      try {
+        const data = JSON.stringify(tabsByPair[pairIdx]);
+        if (data.length > 4.5 * 1024 * 1024) {
+          // Too big — store a stripped-down version (metadata + current snapshot only, no history)
+          const stripped = {
+            list: tabsByPair[pairIdx].list.map(t => ({
+              id: t.id, name: t.name, dirty: t.dirty, lastViewport: t.lastViewport,
+              desktopSnap: t.desktopSnap, mobileSnap: t.mobileSnap,
+              desktopUndo: [], desktopRedo: [], mobileUndo: [], mobileRedo: [],
+            })),
+            activeTabId: tabsByPair[pairIdx].activeTabId,
+          };
+          const strippedData = JSON.stringify(stripped);
+          if (strippedData.length < 4.5 * 1024 * 1024) {
+            localStorage.setItem(key, strippedData);
+          } else {
+            localStorage.removeItem(key);   // give up, let it stay in-memory only
+          }
+        } else {
+          localStorage.setItem(key, data);
+        }
+      } catch (e) {
+        // Quota exceeded or similar — best-effort, don't break anything
+        console.warn('Tab persist failed for pair', pairIdx, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('persistTabsNow failed:', e);
+  }
+}
+
+function _restorePairTabsFromStorage(pairIdx) {
+  try {
+    const raw = localStorage.getItem(TABS_LS_KEY + ':' + pairIdx);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.list) || parsed.list.length === 0) return null;
+    // Bump the tab id counter past any restored ids so we don't collide
+    parsed.list.forEach(t => {
+      const m = (t.id || '').match(/^tab_(\d+)$/);
+      if (m) _tabIdCounter = Math.max(_tabIdCounter, parseInt(m[1], 10));
+      // Ensure all fields are defined
+      t.desktopUndo = t.desktopUndo || [];
+      t.desktopRedo = t.desktopRedo || [];
+      t.mobileUndo  = t.mobileUndo  || [];
+      t.mobileRedo  = t.mobileRedo  || [];
+      t.dirty = !!t.dirty;
+      t.lastViewport = t.lastViewport || 'desktop';
+    });
+    return parsed;
+  } catch (e) {
+    console.warn('Tab restore failed for pair', pairIdx, e);
+    return null;
+  }
+}
+
+// ─── Initialization ──────────────────────────────────────────────────────
+// On first load, the underlying code has already called switchTemplate()
+// for the initial template with default content in templateStates. If the
+// initial pair has stored tabs, restore them now.
+(function initTabs() {
+  const pairIdx = getActivePairIndex();
+  if (pairIdx < 0) {
+    // No template active yet — the user hasn't clicked a sidebar tab.
+    // Nothing to do; our switchTemplate wrapper will handle restoration
+    // when they do.
+    return;
+  }
+  _pairVisitedThisSession.add(pairIdx);
+
+  if (_peekStoredTabs(pairIdx)) {
+    const tabs = ensurePairTabs(pairIdx);
+    applyTabToLive(pairIdx, tabs.activeTabId);
+    const tab = getActiveTab(pairIdx);
+    const viewport = tab.lastViewport || 'desktop';
+    pairLastViewport[pairIdx] = viewport;
+    const tmplIdx = getTemplateIndex(pairIdx, viewport);
+    activeTemplateIndex = -1;
+    _tabsSwitchTemplatePrev(tmplIdx);
+  } else {
+    ensurePairTabs(pairIdx);   // creates default Tab 1
+  }
+  renderTabBar();
+})();
+
 </script>
+<!-- Unsaved-changes confirmation modal (used when Open/Open Recent is clicked with unsaved work) -->
+<div class="confirm-modal-backdrop" id="confirmModalBackdrop">
+  <div class="confirm-modal">
+    <h3 id="confirmModalTitle">Unsaved changes</h3>
+    <p id="confirmModalBody">You have unsaved changes. Do you want to save before opening another project?</p>
+    <div class="modal-actions">
+      <button type="button" id="confirmModalCancel">Cancel</button>
+      <button type="button" class="danger" id="confirmModalDiscard">Discard</button>
+      <button type="button" class="primary" id="confirmModalSave">Save &amp; continue</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
