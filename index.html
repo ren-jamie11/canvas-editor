@@ -2035,6 +2035,57 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ─── Ctrl/Cmd+S → trigger Save button ────────────────────────────────────
+// Fires regardless of focus context — whether you're typing inside a text
+// box or just have a tab active, Ctrl+S should save. Always prevents the
+// browser's default "Save Page As..." dialog.
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    if (e.repeat) return;
+    const btn = document.getElementById('saveProjectBtn');
+    if (btn && !btn.disabled) btn.click();
+  }
+});
+
+// ─── Ctrl/Cmd+B / +I / +U → toggle bold/italic/underline on selection ────
+// Behavior depends on context:
+//   • If the user is editing inside a text box (contentEditable focused):
+//     let the browser handle it natively via execCommand, which wraps the
+//     currently-selected range in <b>/<i>/<u> tags. The existing `input`
+//     listener on the textbox syncs tb.text from innerHTML afterwards, so
+//     the rich formatting persists through save/load.
+//   • If one or more text boxes are selected (but not being edited):
+//     toggle the whole-textbox flag (tb.bold/italic/underline), same as
+//     clicking the right-sidebar toolbar button. Works for multi-select.
+//   • Otherwise: do nothing, don't preventDefault — these keys have no
+//     default browser action at the page level to worry about.
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (key !== 'b' && key !== 'i' && key !== 'u') return;
+
+  const inContentEditable = (e.target.contentEditable === 'true');
+  if (inContentEditable) {
+    // Native browser handling — let it through. No preventDefault.
+    return;
+  }
+
+  // Not in edit mode — only act if text boxes are selected.
+  if (!selectedTextBoxIds || selectedTextBoxIds.size === 0) return;
+
+  e.preventDefault();
+  if (e.repeat) return;
+
+  if (key === 'b') {
+    document.getElementById('rsBold').click();
+  } else if (key === 'i') {
+    document.getElementById('rsItalic').click();
+  } else if (key === 'u') {
+    document.getElementById('rsUnderline').click();
+  }
+});
+
 window.addEventListener('keyup', (e) => {
   if (e.key.toLowerCase() === 'z') clearUndoTimers();
   if (e.key.toLowerCase() === 'y') clearRedoTimers();
